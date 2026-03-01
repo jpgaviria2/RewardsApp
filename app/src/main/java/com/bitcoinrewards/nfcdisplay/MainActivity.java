@@ -121,6 +121,7 @@ public class MainActivity extends Activity {
 
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
+                    injectNfcBanner(view);
                 }
             }
         });
@@ -320,14 +321,39 @@ public class MainActivity extends Activity {
         );
     }
 
+    /**
+     * Inject a visible NFC tap banner below the QR code
+     */
+    private void injectNfcBanner(WebView view) {
+        String js = "(function() {" +
+            "if (document.getElementById('nfc-tap-banner')) return;" +
+            "var qr = document.querySelector('.qr-code') || document.querySelector('img[alt*=\"QR\"]');" +
+            "if (!qr) { var imgs = document.querySelectorAll('img'); for(var i=0;i<imgs.length;i++){if(imgs[i].width>100){qr=imgs[i];break;}} }" +
+            "if (!qr) return;" +
+            "var banner = document.createElement('div');" +
+            "banner.id = 'nfc-tap-banner';" +
+            "banner.innerHTML = '📱 TAP YOUR PHONE HERE TO CLAIM';" +
+            "banner.style.cssText = 'background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:22px;font-weight:bold;padding:20px;margin:15px auto;border-radius:16px;text-align:center;max-width:400px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 4px 20px rgba(102,126,234,0.5);';" +
+            "var style = document.createElement('style');" +
+            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(102,126,234,0.5)} 50%{transform:scale(1.03);box-shadow:0 6px 30px rgba(102,126,234,0.8)} }';" +
+            "document.head.appendChild(style);" +
+            "var parent = qr.parentElement || qr.parentNode;" +
+            "if (parent) { parent.insertBefore(banner, qr.nextSibling); }" +
+            "})()";
+        view.evaluateJavascript(js, null);
+    }
+
     void setNfcPayload(String lnurl) {
         if (!nfcEnabled) return;
         if (lnurl.equals(currentLnurl)) return;
         currentLnurl = lnurl;
 
         // Use static method — works even before service is created by Android
-        NdefHostCardEmulationService.setPayload("lightning:" + lnurl);
-        Log.i(TAG, "NFC payload set: lightning:" + lnurl.substring(0, Math.min(30, lnurl.length())) + "...");
+        String fullUri = "lightning:" + lnurl;
+        NdefHostCardEmulationService.setPayload(fullUri);
+        Log.i(TAG, "✅ NFC payload set (" + fullUri.length() + " chars): " + fullUri.substring(0, Math.min(50, fullUri.length())) + "...");
+        Log.i(TAG, "✅ HCE hasPayload: " + NdefHostCardEmulationService.hasPayload());
+        Log.i(TAG, "✅ HCE instance: " + (NdefHostCardEmulationService.getInstance() != null ? "running" : "waiting for tap"));
 
         webView.evaluateJavascript(
             "var ind = document.getElementById('nfc-hce-indicator');" +
