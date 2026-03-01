@@ -1,7 +1,9 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -78,6 +80,12 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                // If we landed on login page, auto-fill and submit
+                if (url.contains("/login") || url.contains("/Account/Login")) {
+                    Log.i(TAG, "Login page detected, auto-authenticating...");
+                    autoLogin(view);
+                    return;
+                }
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
                 }
@@ -153,6 +161,32 @@ public class MainActivity extends Activity {
 
             handler.postDelayed(() -> nfcTapOverlay.setVisibility(View.GONE), 1500);
         });
+    }
+
+    /**
+     * Auto-fill login form when the WebView is redirected to the login page.
+     * Uses the stored email and submits — password is handled via API key cookie.
+     */
+    private void autoLogin(WebView view) {
+        SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
+        String email = prefs.getString(SettingsActivity.KEY_EMAIL, "");
+        String apiKey = prefs.getString(SettingsActivity.KEY_API_KEY, "");
+        String btcpayUrl = prefs.getString(SettingsActivity.KEY_BTCPAY_URL, "");
+
+        if (!apiKey.isEmpty() && !btcpayUrl.isEmpty()) {
+            // Set API key as cookie for authentication
+            android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+            cookieManager.setAcceptCookie(true);
+
+            // Use Authorization header approach: load the display URL with API key
+            String displayUrl = SettingsActivity.getDisplayUrl(this);
+            if (displayUrl != null) {
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                headers.put("Authorization", "token " + apiKey);
+                Log.i(TAG, "Reloading with API key auth");
+                view.loadUrl(displayUrl, headers);
+            }
+        }
     }
 
     @Override
