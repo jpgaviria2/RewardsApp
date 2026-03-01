@@ -135,8 +135,14 @@ public class MainActivity extends Activity {
         // First, try to establish a session cookie via login
         performBackgroundLogin();
 
-        if (nfcEnabled && !NdefHostCardEmulationService.isHceAvailable(this)) {
-            Log.e(TAG, "HCE not available on this device!");
+        if (nfcEnabled) {
+            if (NdefHostCardEmulationService.isHceAvailable(this)) {
+                // Set up tap listener (static — works before service is created)
+                NdefHostCardEmulationService.setStaticTapListener(() -> onNfcTapDetected());
+                Log.i(TAG, "NFC HCE available, tap listener set");
+            } else {
+                Log.e(TAG, "HCE not available on this device!");
+            }
         }
     }
 
@@ -319,28 +325,23 @@ public class MainActivity extends Activity {
         if (lnurl.equals(currentLnurl)) return;
         currentLnurl = lnurl;
 
-        NdefHostCardEmulationService hce = NdefHostCardEmulationService.getInstance();
-        if (hce != null) {
-            hce.setPaymentRequest("lightning:" + lnurl);
-            Log.i(TAG, "NFC broadcasting: lightning:" + lnurl.substring(0, Math.min(30, lnurl.length())) + "...");
+        // Use static method — works even before service is created by Android
+        NdefHostCardEmulationService.setPayload("lightning:" + lnurl);
+        Log.i(TAG, "NFC payload set: lightning:" + lnurl.substring(0, Math.min(30, lnurl.length())) + "...");
 
-            webView.evaluateJavascript(
-                "var ind = document.getElementById('nfc-hce-indicator');" +
-                "if (ind) ind.style.display = 'block';",
-                null
-            );
-        }
+        webView.evaluateJavascript(
+            "var ind = document.getElementById('nfc-hce-indicator');" +
+            "if (ind) ind.style.display = 'block';",
+            null
+        );
     }
 
     void clearNfcPayload() {
         if (currentLnurl == null) return;
         currentLnurl = null;
 
-        NdefHostCardEmulationService hce = NdefHostCardEmulationService.getInstance();
-        if (hce != null) {
-            hce.clearPaymentRequest();
-            Log.i(TAG, "NFC cleared");
-        }
+        NdefHostCardEmulationService.clearPayload();
+        Log.i(TAG, "NFC cleared");
     }
 
     public void onNfcTapDetected() {

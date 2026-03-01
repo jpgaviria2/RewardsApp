@@ -10,7 +10,10 @@ import android.util.Log;
 
 /**
  * HCE service for broadcasting LNURL-withdraw via NFC NDEF Type 4 Tag emulation.
- * Adapted from Numo — stripped to read-only broadcast (no Cashu, no write-back).
+ * 
+ * Android only creates this service when a phone taps the device.
+ * The LNURL payload is stored in a static field so it's available
+ * before the service is instantiated.
  */
 public class NdefHostCardEmulationService extends HostApduService {
     private static final String TAG = "NdefHCEService";
@@ -20,22 +23,80 @@ public class NdefHostCardEmulationService extends HostApduService {
     private static NdefHostCardEmulationService instance;
     private boolean tapNotified = false;
 
+    // Static payload — set by MainActivity BEFORE service exists
+    // When a phone taps and Android creates the service, 
+    // onCreate() picks up this payload
+    private static String pendingPayload = "";
+    private static NfcTapListener staticTapListener;
+
     public interface NfcTapListener {
         void onNfcTapDetected();
     }
 
-    private NfcTapListener tapListener;
-
     public static NdefHostCardEmulationService getInstance() {
         return instance;
     }
+
+    /**
+     * Set the LNURL payload to broadcast via NFC.
+     * Can be called before the service exists — stored statically.
+     */
+    public static void setPayload(String uri) {
+        pendingPayload = (uri != null) ? uri : "";
+        Log.i(TAG, "Static payload set: " + (uri != null ? uri.substring(0, Math.min(40, uri.length())) + "..." : "empty"));
+        
+        // If service already running, update it immediately
+        if (instance != null && instance.ndefProcessor != null) {
+            instance.ndefProcessor.setMessageToSend(pendingPayload);
+            Log.i(TAG, "Updated running service with new payload");
+        }
+    }
+
+    /**
+     * Clear the NFC payload.
+     */
+    public static void clearPayload() {
+        pendingPayload = "";
+        if (instance != null && instance.ndefProcessor != null) {
+            instance.ndefProcessor.setMessageToSend("");
+        }
+        Log.i(TAG, "Payload cleared");
+    }
+
+    /**
+     * Check if a payload is set (even before service exists).
+     */
+    public static boolean hasPayload() {
+        return pendingPayload != null && !pendingPayload.isEmpty();
+    }
+
+    /**
+     * Set tap listener (static so it works before service creation).
+     */
+    public static void setStaticTapListener(NfcTapListener listener) {
+        staticTapListener = listener;
+        if (instance != null) {
+            instance.tapListener = listener;
+        }
+    }
+
+    private NfcTapListener tapListener;
 
     @Override
     public void onCreate() {
         super.onCreate();
         ndefProcessor = new NdefProcessor();
         instance = this;
-        Log.i(TAG, "HCE Service created");
+        tapListener = staticTapListener;
+
+        // Load any pending payload that was set before service existed
+        if (pendingPayload != null && !pendingPayload.isEmpty()) {
+            ndefProcessor.setMessageToSend(pendingPayload);
+            Log.i(TAG, "HCE Service created — loaded pending payload: " + 
+                pendingPayload.substring(0, Math.min(40, pendingPayload.length())) + "...");
+        } else {
+            Log.i(TAG, "HCE Service created — no payload pending");
+        }
     }
 
     @Override
@@ -48,9 +109,14 @@ public class NdefHostCardEmulationService extends HostApduService {
     @Override
     public byte[] processCommandApdu(byte[] commandApdu, Bundle extras) {
         try {
-            if (!tapNotified && tapListener != null) {
+            // Notify tap listener
+            if (!tapNotified) {
                 tapNotified = true;
-                tapListener.onNfcTapDetected();
+                if (tapListener != null) {
+                    tapListener.onNfcTapDetected();
+                } else if (staticTapListener != null) {
+                    staticTapListener.onNfcTapDetected();
+                }
             }
 
             byte[] response = ndefProcessor.processCommandApdu(commandApdu);
@@ -70,22 +136,18 @@ public class NdefHostCardEmulationService extends HostApduService {
         Log.i(TAG, "HCE deactivated, reason: " + reason);
     }
 
+    // Legacy instance methods — delegate to static
     public void setPaymentRequest(String uri) {
-        if (ndefProcessor != null) {
-            ndefProcessor.setMessageToSend(uri);
-            Log.i(TAG, "Broadcasting: " + uri.substring(0, Math.min(40, uri.length())) + "...");
-        }
+        setPayload(uri);
     }
 
     public void clearPaymentRequest() {
-        if (ndefProcessor != null) {
-            ndefProcessor.setMessageToSend("");
-            Log.i(TAG, "Broadcast cleared");
-        }
+        clearPayload();
     }
 
     public void setTapListener(NfcTapListener listener) {
         this.tapListener = listener;
+        staticTapListener = listener;
     }
 
     public static boolean isHceAvailable(Context context) {
