@@ -4,6 +4,10 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.nfc.NfcAdapter;
+import android.nfc.NfcManager;
+import android.nfc.cardemulation.CardEmulation;
+import android.content.ComponentName;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
@@ -137,14 +141,59 @@ public class MainActivity extends Activity {
         performBackgroundLogin();
 
         if (nfcEnabled) {
-            if (NdefHostCardEmulationService.isHceAvailable(this)) {
-                // Set up tap listener (static — works before service is created)
+            // Check NFC is enabled on device
+            NfcManager nfcManager = (NfcManager) getSystemService(NFC_SERVICE);
+            NfcAdapter nfcAdapter = nfcManager != null ? nfcManager.getDefaultAdapter() : null;
+
+            if (nfcAdapter == null) {
+                Log.e(TAG, "NFC not supported on this device");
+            } else if (!nfcAdapter.isEnabled()) {
+                Log.e(TAG, "NFC is disabled — opening settings");
+                startActivity(new Intent(android.provider.Settings.ACTION_NFC_SETTINGS));
+            } else if (NdefHostCardEmulationService.isHceAvailable(this)) {
                 NdefHostCardEmulationService.setStaticTapListener(() -> onNfcTapDetected());
                 Log.i(TAG, "NFC HCE available, tap listener set");
             } else {
-                Log.e(TAG, "HCE not available on this device!");
+                Log.e(TAG, "HCE not supported on this device");
             }
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Set this app's HCE service as the preferred one (like Numo does)
+        if (nfcEnabled) {
+            try {
+                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+                if (nfcAdapter != null) {
+                    CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
+                    ComponentName hceComponent = new ComponentName(this, NdefHostCardEmulationService.class);
+                    cardEmulation.setPreferredService(this, hceComponent);
+                    Log.i(TAG, "Set preferred HCE service");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to set preferred HCE service: " + e.getMessage());
+            }
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        // Unset preferred service when app goes to background
+        if (nfcEnabled) {
+            try {
+                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+                if (nfcAdapter != null) {
+                    CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
+                    cardEmulation.unsetPreferredService(this);
+                    Log.i(TAG, "Unset preferred HCE service");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to unset preferred HCE service: " + e.getMessage());
+            }
+        }
+        super.onPause();
     }
 
     /**
