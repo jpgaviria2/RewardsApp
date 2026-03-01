@@ -8,6 +8,17 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Loading overlay -->
+    <TextView
+        android:id="@+id/loading_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:background="#1a1a2e"
+        android:textColor="#aaaacc"
+        android:textSize="20sp"
+        android:visibility="gone" />
+
     <!-- Settings gear button (top-right corner) -->
     <ImageButton
         android:id="@+id/btn_settings"

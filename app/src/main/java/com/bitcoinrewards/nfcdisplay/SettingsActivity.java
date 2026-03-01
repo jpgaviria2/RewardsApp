@@ -46,6 +46,7 @@ public class SettingsActivity extends Activity {
     public static final String KEY_STORE_NAME = "store_name";
     public static final String KEY_API_KEY = "api_key";
     public static final String KEY_EMAIL = "email";
+    public static final String KEY_PASSWORD = "password";
     public static final String KEY_REFRESH_SECONDS = "refresh_seconds";
     public static final String KEY_NFC_ENABLED = "nfc_enabled";
     public static final String KEY_ONBOARDED = "onboarded";
@@ -312,6 +313,7 @@ public class SettingsActivity extends Activity {
         SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
         editor.putString(KEY_BTCPAY_URL, url);
         editor.putString(KEY_EMAIL, inputEmail.getText().toString().trim());
+        editor.putString(KEY_PASSWORD, inputPassword.getText().toString());
         editor.putString(KEY_STORE_ID, selectedStoreId);
         editor.putString(KEY_STORE_NAME, selectedStoreName);
         editor.putString(KEY_API_KEY, apiKey);
