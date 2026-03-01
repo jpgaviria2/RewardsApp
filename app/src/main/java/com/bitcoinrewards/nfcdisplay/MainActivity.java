@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,6 +12,7 @@ import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.ImageButton;
 import android.widget.TextView;
 
 import com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService;
@@ -18,24 +20,36 @@ import com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService;
 /**
  * Main activity: fullscreen WebView loading the BTCPay rewards display page,
  * with HCE NFC integration via JavaScript bridge.
- *
- * The WebView loads the existing display URL. After each page load, JS extracts
- * the LNURL from the page and sets it on the HCE service for NFC broadcast.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "RewardsNFC";
-
-    // CONFIGURE: Set your BTCPay rewards display URL
-    private static final String DISPLAY_URL = "https://your-btcpay-host/plugins/bitcoin-rewards/YOUR_STORE_ID/display";
 
     private WebView webView;
     private TextView nfcTapOverlay;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String currentLnurl = null;
+    private boolean nfcEnabled = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Check if onboarding is needed
+        if (!SettingsActivity.isOnboarded(this)) {
+            startActivity(new Intent(this, SettingsActivity.class));
+            finish();
+            return;
+        }
+
+        // Get display URL from settings
+        String displayUrl = SettingsActivity.getDisplayUrl(this);
+        if (displayUrl == null) {
+            startActivity(new Intent(this, SettingsActivity.class));
+            finish();
+            return;
+        }
+
+        nfcEnabled = SettingsActivity.isNfcEnabled(this);
 
         // Keep screen on (kiosk display)
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -44,6 +58,14 @@ public class MainActivity extends Activity {
 
         nfcTapOverlay = findViewById(R.id.nfc_tap_overlay);
         webView = findViewById(R.id.webview);
+
+        // Settings gear button
+        ImageButton btnSettings = findViewById(R.id.btn_settings);
+        if (btnSettings != null) {
+            btnSettings.setOnClickListener(v -> {
+                startActivity(new Intent(this, SettingsActivity.class));
+            });
+        }
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -56,13 +78,16 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                extractLnurlFromPage(view);
+                if (nfcEnabled) {
+                    extractLnurlFromPage(view);
+                }
             }
         });
 
-        webView.loadUrl(DISPLAY_URL);
+        Log.i(TAG, "Loading display URL: " + displayUrl);
+        webView.loadUrl(displayUrl);
 
-        if (!NdefHostCardEmulationService.isHceAvailable(this)) {
+        if (nfcEnabled && !NdefHostCardEmulationService.isHceAvailable(this)) {
             Log.e(TAG, "HCE not available on this device!");
         }
     }
@@ -88,6 +113,7 @@ public class MainActivity extends Activity {
     }
 
     void setNfcPayload(String lnurl) {
+        if (!nfcEnabled) return;
         if (lnurl.equals(currentLnurl)) return;
         currentLnurl = lnurl;
 
@@ -96,7 +122,6 @@ public class MainActivity extends Activity {
             hce.setPaymentRequest("lightning:" + lnurl);
             Log.i(TAG, "NFC broadcasting: lightning:" + lnurl.substring(0, Math.min(30, lnurl.length())) + "...");
 
-            // Show NFC indicator on the page
             webView.evaluateJavascript(
                 "var ind = document.getElementById('nfc-hce-indicator');" +
                 "if (ind) ind.style.display = 'block';",
