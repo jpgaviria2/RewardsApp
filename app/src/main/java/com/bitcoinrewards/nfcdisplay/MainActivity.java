@@ -111,22 +111,13 @@ public class MainActivity extends Activity {
                 }
                 webView.setVisibility(View.VISIBLE);
 
-                // If we hit the login page, the cookie session expired or wasn't set
+                // If we hit the login page, just let the user log in manually
+                // The background login already tried — don't fight the WebView
                 if (url.contains("/login") || url.contains("/Account/Login")) {
-                    if (!loginAttempted) {
-                        Log.i(TAG, "Login page detected — session cookie missing, performing login...");
-                        loginAttempted = true;
-                        performBackgroundLogin();
-                    } else {
-                        Log.e(TAG, "Login page detected again after login attempt — credentials may be wrong");
-                        // Show settings so user can re-enter credentials
-                        startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                    }
+                    Log.i(TAG, "Login page shown in WebView — user can log in manually");
+                    // Don't interfere — let the user type
                     return;
                 }
-
-                // Reset login flag on successful page load
-                loginAttempted = false;
 
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
