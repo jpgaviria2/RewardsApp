@@ -3,6 +3,14 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        release {
+            storeFile file('../release-keystore.jks')
+            storePassword 'rewardsnfc123'
+            keyAlias 'rewards-nfc'
+            keyPassword 'rewardsnfc123'
+        }
+    }
     namespace 'com.bitcoinrewards.nfcdisplay'
     compileSdk 34
 
@@ -10,13 +18,14 @@ android {
         applicationId "com.bitcoinrewards.nfcdisplay"
         minSdk 19
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.3.1"
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
         }
     }
 
