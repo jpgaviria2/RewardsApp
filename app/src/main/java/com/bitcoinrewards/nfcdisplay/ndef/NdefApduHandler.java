@@ -36,16 +36,28 @@ public class NdefApduHandler {
 
     public byte[] handleReadBinary(byte[] apdu) {
         byte[] selectedFile = stateManager.getSelectedFile();
-        if (selectedFile == null || apdu.length < 5) {
+        if (selectedFile == null) {
             return NdefConstants.NDEF_RESPONSE_ERROR;
         }
 
-        int length = (apdu[4] & 0xFF);
-        if (length == 0) length = 256;
-        int offset = ((apdu[2] & 0xFF) << 8) | (apdu[3] & 0xFF);
+        int offset = 0;
+        int length = selectedFile.length;
 
+        if (apdu.length >= 4) {
+            offset = ((apdu[2] & 0xFF) << 8) | (apdu[3] & 0xFF);
+        }
+        if (apdu.length >= 5) {
+            length = (apdu[4] & 0xFF);
+            if (length == 0) length = 256;
+        }
+
+        // Clamp to available data (don't error, just return what we have)
+        if (offset >= selectedFile.length) {
+            // Return empty with OK status
+            return NdefConstants.NDEF_RESPONSE_OK;
+        }
         if (offset + length > selectedFile.length) {
-            return NdefConstants.NDEF_RESPONSE_ERROR;
+            length = selectedFile.length - offset;
         }
 
         byte[] data = Arrays.copyOfRange(selectedFile, offset, offset + length);

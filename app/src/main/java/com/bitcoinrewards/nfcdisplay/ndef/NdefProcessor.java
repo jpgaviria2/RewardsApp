@@ -20,8 +20,12 @@ public class NdefProcessor {
     }
 
     public byte[] processCommandApdu(byte[] commandApdu) {
-        // SELECT AID
-        if (Arrays.equals(commandApdu, NdefConstants.NDEF_SELECT_AID)) {
+        if (commandApdu == null || commandApdu.length < 2) {
+            return NdefConstants.NDEF_RESPONSE_ERROR;
+        }
+
+        // SELECT AID — match the AID bytes flexibly (iOS may omit trailing Le byte)
+        if (isSelectAidCommand(commandApdu)) {
             return NdefConstants.NDEF_RESPONSE_OK;
         }
 
@@ -31,12 +35,28 @@ public class NdefProcessor {
             return apduHandler.handleSelectFile(commandApdu);
         }
 
-        // READ BINARY
-        if (commandApdu.length >= 5 &&
+        // READ BINARY (Numo uses >= 2, not >= 5)
+        if (commandApdu.length >= 2 &&
             Arrays.equals(Arrays.copyOfRange(commandApdu, 0, 2), NdefConstants.NDEF_READ_BINARY_HEADER)) {
             return apduHandler.handleReadBinary(commandApdu);
         }
 
         return NdefConstants.NDEF_RESPONSE_ERROR;
+    }
+
+    /**
+     * Check if command is a SELECT AID for NDEF Type 4.
+     * Flexible match — checks AID bytes but allows different Le byte.
+     * iOS and Android may send slightly different SELECT AID commands.
+     */
+    private boolean isSelectAidCommand(byte[] cmd) {
+        if (cmd.length < 12) return false;
+        // Check CLA=00, INS=A4, P1=04, P2=00, Lc=07
+        if (cmd[0] != 0x00 || cmd[1] != (byte) 0xA4 || cmd[2] != 0x04 || cmd[3] != 0x00 || cmd[4] != 0x07) {
+            return false;
+        }
+        // Check AID: D2760000850101
+        byte[] expectedAid = {(byte) 0xD2, 0x76, 0x00, 0x00, (byte) 0x85, 0x01, 0x01};
+        return Arrays.equals(Arrays.copyOfRange(cmd, 5, 12), expectedAid);
     }
 }
