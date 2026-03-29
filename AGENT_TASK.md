@@ -1,126 +1,98 @@
-# Task: Local HTML Serving for RewardsApp
+# Task: Fix RewardsApp — Revert to WebView + CSS injection
 
-Rewrite RewardsApp to serve local Trails-branded HTML instead of loading the BTCPay WebView URL.
+The previous rewrite broke the app by polling a non-existent API endpoint (`/display-data`).
+The real endpoint is `/plugins/bitcoin-rewards/{storeId}/display` which returns HTML, not JSON.
 
-## Goal
-- App polls BTCPay API every 5 seconds for pending rewards
-- WebView loads LOCAL HTML from assets (not remote URL)
-- No reward pending → show waiting.html (brown gradient, ☕ icon)
-- Reward arrives → show reward.html (full Trails template with sats + QR)
+## What to do
 
-## Step 1: Create app/src/main/assets/waiting.html
+Revert MainActivity.java back to the original WebView approach (loading the remote BTCPay display URL),
+but add CSS injection in onPageFinished to replace purple with Trails brown branding.
 
-Full Trails-branded waiting screen:
-- Brown gradient background (linear-gradient 135deg, #6B4423 → #CD853F)
-- Cream card (#FFFEF7), 24dp border radius, large shadow
-- ☕ icon (72px) with pulse animation
-- "Trails Coffee Rewards" heading in Playfair Display, #6B4423
-- "Waiting for next customer..." subtitle
-- "Trails Coffee • Anmore, BC" footer
-- Google Fonts: Playfair Display + Inter
+## Step 1: Restore MainActivity.java to WebView approach
 
-## Step 2: Create app/src/main/assets/reward.html
+The original flow was:
+1. Load display URL: `{btcpayUrl}/plugins/bitcoin-rewards/{storeId}/display` in WebView
+2. Background login to get session cookie first (LoginTask)
+3. onPageFinished: extractLnurlFromPage + injectNfcBanner
 
-Full Trails-branded reward screen matching the HTML template provided:
-- Same brown gradient background
-- Cream card with slide-up animation
-- "Coffee Rewards Earned!" heading in Playfair Display
-- Amount section: cream bg, brown border, large sats amount (#sats-amount), "satoshis" unit
-- QR image: white card, shadow, <img id="qr-image">
-- Instructions: cream bg, brown left border, "How to Collect:" 3 steps
-- App promo: dark brown gradient card, white text, "Don't have the app yet?"
-- Countdown: <div class="countdown">Auto-closing in <span id="countdown-seconds">30</span> seconds</div>
-- Done button: brown gradient, full width, calls AndroidBridge.dismiss()
-- Hidden NFC data: <div id="nfc-lnurl-data" data-lnurl="" data-reward-id="" style="display:none"></div>
-- Footer: "Trails Coffee • Anmore, BC"
+Keep all of that. Just ADD a CSS injection call in onPageFinished BEFORE extractLnurlFromPage.
 
-JS in reward.html:
-```javascript
-let seconds = 30;
-const el = document.getElementById("countdown-seconds");
-const timer = setInterval(() => {
-    seconds--;
-    el.textContent = seconds;
-    if (seconds <= 0) { clearInterval(timer); AndroidBridge.dismiss(); }
-}, 1000);
+## Step 2: Add injectBrandingOverrides() method to MainActivity.java
 
-function loadReward(satsAmount, qrDataUri, lnurl, rewardId) {
-    document.getElementById("sats-amount").textContent = parseInt(satsAmount).toLocaleString();
-    document.getElementById("qr-image").src = qrDataUri;
-    document.getElementById("nfc-lnurl-data").dataset.lnurl = lnurl;
-    document.getElementById("nfc-lnurl-data").dataset.rewardId = rewardId;
-}
-```
+Add this method:
 
-## Step 3: Create RewardPoller.java
-
-File: app/src/main/java/com/bitcoinrewards/nfcdisplay/RewardPoller.java
-
-Polls GET {btcpayUrl}/plugins/bitcoin-rewards/{storeId}/display-data every 5 seconds.
-Auth: Authorization: Bearer {apiKey}
-
-Response JSON:
-```json
-{"hasReward":true,"rewardId":"abc","rewardAmountSatoshis":150,"lnurlString":"lnurl1...","lnurlQrDataUri":"data:image/png;base64,...","remainingSeconds":28}
-```
-
-Interface:
 ```java
-public interface RewardCallback {
-    void onReward(String rewardId, long sats, String lnurl, String qrDataUri, int remainingSeconds);
-    void onNoReward();
+private void injectBrandingOverrides(WebView view) {
+    String css =
+        "body { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
+        ".header h1 { color: #FFFEF7 !important; }" +
+        ".header p { color: rgba(255,255,255,0.9) !important; }" +
+        ".status-bar { background: rgba(255,255,255,0.2) !important; }" +
+        ".reward-display { background: #FFFEF7 !important; }" +
+        ".reward-display.waiting { background: #FFFEF7 !important; }" +
+        ".waiting-message { color: #6B4423 !important; }" +
+        ".waiting-icon { font-size: 4rem; }" +
+        ".amount { color: #28a745 !important; }" +
+        "h2[style*='color'] { color: #6B4423 !important; }" +
+        ".countdown-timer { color: #6B4423 !important; }" +
+        ".countdown-timer.warning { color: #CD853F !important; }" +
+        ".refresh-button { color: #6B4423 !important; }" +
+        ".refresh-button:hover { background: #6B4423 !important; color: white !important; }" +
+        ".done-button { background: linear-gradient(135deg, #6B4423, #CD853F) !important; border-color: #6B4423 !important; }" +
+        "#nfc-tap-btn { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
+        "a[style*='color: white'] { color: rgba(255,255,255,0.8) !important; }";
+
+    String js = "(function() {" +
+        "var style = document.createElement('style');" +
+        "style.id = 'trails-branding';" +
+        "if (document.getElementById('trails-branding')) return;" +
+        "style.textContent = " + escapeForJs(css) + ";" +
+        "document.head.appendChild(style);" +
+        "})()";
+
+    view.evaluateJavascript(js, null);
+}
+
+private String escapeForJs(String s) {
+    return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
 }
 ```
 
-Use Handler + Runnable for polling. Stop on destroy(). Catch all exceptions silently, call onNoReward on error.
+## Step 3: Call injectBrandingOverrides in onPageFinished
 
-## Step 4: Rewrite MainActivity.java
+In the WebViewClient onPageFinished, add this call right after hiding the loading overlay:
 
-Key changes:
-1. On launch: webView.loadUrl("file:///android_asset/waiting.html") — NOT the remote BTCPay URL
-2. Create RewardPoller with stored prefs (btcpay_url, store_id, api_key)
-3. Track current state: boolean showingReward, String currentRewardId
-4. onReward() callback (run on main thread via Handler):
-   - If not already showing this reward: load file:///android_asset/reward.html
-   - In onPageFinished (when URL contains "reward.html"): call JS loadReward(sats, qrDataUri, lnurl, rewardId)
-   - Also call setNfcPayload("lightning:" + lnurl)
-5. onNoReward() callback (run on main thread):
-   - If showingReward == true: load waiting.html, clearNfcPayload(), showingReward = false
-6. Add public void dismissCurrentReward() method:
-   - POST to {btcpayUrl}/plugins/bitcoin-rewards/{storeId}/dismiss-reward with {"rewardId": currentRewardId}
-   - Then load waiting.html, clearNfcPayload(), showingReward = false
-   - Do network call in background thread
-7. Keep all existing NFC HCE code exactly as-is (setNfcPayload, clearNfcPayload, onNfcTapDetected, onResume, onPause)
-8. Keep settings gear button
-9. Keep screen-on flag (FLAG_KEEP_SCREEN_ON)
-10. Keep NFC tap overlay feedback
-
-Remove: performBackgroundLogin(), LoginTask, all cookie/session code (no longer needed)
-
-## Step 5: Update AndroidBridge.java
-
-Add:
 ```java
-@JavascriptInterface
-public void dismiss() {
-    activity.dismissCurrentReward();
-}
+injectBrandingOverrides(view);
 ```
 
-Where activity is a reference to MainActivity passed in constructor.
+Call it before extractLnurlFromPage and injectNfcBanner.
 
-Check existing AndroidBridge.java constructor signature and add the dismiss() method.
+## Step 4: Delete RewardPoller.java and the asset HTML files
 
-## Step 6: Update app/build.gradle
+Delete:
+- app/src/main/java/com/bitcoinrewards/nfcdisplay/RewardPoller.java
+- app/src/main/assets/waiting.html (if exists)
+- app/src/main/assets/reward.html (if exists)
 
-versionCode 11, versionName "2.1.0"
+Restore the original MainActivity flow — load remote URL, background login, CSS injection on page load.
+
+The original MainActivity.java is in git history. Use git to restore the original if needed, or rewrite it based on the original structure described above.
+
+## Step 5: Check AndroidBridge.java
+
+Make sure AndroidBridge.java still has the original methods. Remove the dismiss() method if it references MainActivity.dismissCurrentReward() since that method won't exist anymore.
+
+## Step 6: Bump version
+
+app/build.gradle: versionCode 12, versionName "2.2.0"
 
 ## Step 7: Commit and push
 
 ```bash
 git add -A
-git commit -m "feat: local Trails HTML — no remote WebView, polls BTCPay API directly"
+git commit -m "fix: revert to WebView + CSS injection for Trails branding"
 git push
 ```
 
-When completely finished, run: openclaw system event --text "Done: RewardsApp v2.1.0 local HTML serving built and pushed" --mode now
+When completely finished, run: openclaw system event --text "Done: RewardsApp v2.2.0 fixed — WebView with CSS branding injection" --mode now
