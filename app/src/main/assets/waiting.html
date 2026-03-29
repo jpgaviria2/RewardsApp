@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trails Coffee Rewards</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #6B4423, #CD853F);
+    font-family: 'Inter', sans-serif;
+}
+.card {
+    background: #FFFEF7;
+    border-radius: 24px;
+    padding: 60px 40px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    max-width: 420px;
+    width: 90%;
+}
+.icon {
+    font-size: 72px;
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+}
+h1 {
+    font-family: 'Playfair Display', serif;
+    color: #6B4423;
+    font-size: 28px;
+    margin: 24px 0 12px;
+}
+.subtitle {
+    color: #8B7355;
+    font-size: 18px;
+    font-weight: 500;
+}
+.footer {
+    margin-top: 40px;
+    color: #A0896C;
+    font-size: 14px;
+    font-weight: 500;
+}
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">&#9749;</div>
+    <h1>Trails Coffee Rewards</h1>
+    <p class="subtitle">Waiting for next customer...</p>
+    <p class="footer">Trails Coffee &bull; Anmore, BC</p>
+</div>
+</body>
+</html>

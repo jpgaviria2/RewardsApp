@@ -29,4 +29,9 @@ public class AndroidBridge {
     public boolean isNfcAvailable() {
         return NdefHostCardEmulationService.isHceAvailable(activity);
     }
+
+    @JavascriptInterface
+    public void dismiss() {
+        activity.dismissCurrentReward();
+    }
 }

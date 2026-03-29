@@ -8,7 +8,6 @@ import android.nfc.NfcAdapter;
 import android.nfc.NfcManager;
 import android.nfc.cardemulation.CardEmulation;
 import android.content.ComponentName;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,7 +15,6 @@ import android.os.Vibrator;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
-import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -25,25 +23,13 @@ import android.widget.TextView;
 
 import com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.HttpCookie;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.List;
-import java.util.Map;
 
 /**
- * Main activity: fullscreen WebView loading the BTCPay rewards display page,
- * with HCE NFC integration via JavaScript bridge.
- * 
- * Auth flow:
- * 1. POST to /api/v1/api-keys with Basic auth to get API key (done in settings)
- * 2. On launch, POST login form to get session cookie
- * 3. Set cookie in WebView's CookieManager
- * 4. Load display page — BTCPay sees valid session cookie
- * 5. Auto-refresh works because cookie persists in WebView
+ * Main activity: fullscreen WebView loading local Trails-branded HTML,
+ * polling BTCPay API for pending rewards, with HCE NFC integration.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "RewardsNFC";
@@ -54,7 +40,16 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String currentLnurl = null;
     private boolean nfcEnabled = true;
-    private boolean loginAttempted = false;
+
+    private RewardPoller poller;
+    private boolean showingReward = false;
+    private String currentRewardId = null;
+
+    // Pending reward data to inject after page load
+    private String pendingSats;
+    private String pendingQrDataUri;
+    private String pendingLnurl;
+    private String pendingRewardId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,8 +62,12 @@ public class MainActivity extends Activity {
             return;
         }
 
-        String displayUrl = SettingsActivity.getDisplayUrl(this);
-        if (displayUrl == null) {
+        SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
+        String btcpayUrl = prefs.getString(SettingsActivity.KEY_BTCPAY_URL, "");
+        String storeId = prefs.getString(SettingsActivity.KEY_STORE_ID, "");
+        String apiKey = prefs.getString(SettingsActivity.KEY_API_KEY, "");
+
+        if (btcpayUrl.isEmpty() || storeId.isEmpty() || apiKey.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
             finish();
             return;
@@ -98,50 +97,70 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-        // Enable cookies in WebView
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
-
         // Add JS bridge
         webView.addJavascriptInterface(new AndroidBridge(this), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                // Hide loading overlay
                 if (loadingText != null) {
                     loadingText.setVisibility(View.GONE);
                 }
                 webView.setVisibility(View.VISIBLE);
 
-                // If we hit the login page, just let the user log in manually
-                // The background login already tried — don't fight the WebView
-                if (url.contains("/login") || url.contains("/Account/Login")) {
-                    Log.i(TAG, "Login page shown in WebView — user can log in manually");
-                    // Don't interfere — let the user type
-                    return;
-                }
-
-                if (nfcEnabled) {
-                    extractLnurlFromPage(view);
-                    injectNfcBanner(view);
+                if (url.contains("reward.html") && pendingSats != null) {
+                    String js = "loadReward('" + pendingSats + "','" + pendingQrDataUri + "','" + pendingLnurl + "','" + pendingRewardId + "');";
+                    view.evaluateJavascript(js, null);
+                    if (nfcEnabled) {
+                        setNfcPayload(pendingLnurl);
+                    }
+                    pendingSats = null;
+                    pendingQrDataUri = null;
+                    pendingLnurl = null;
+                    pendingRewardId = null;
                 }
             }
         });
 
-        // Show loading state
+        // Load waiting page
         webView.setVisibility(View.INVISIBLE);
         if (loadingText != null) {
             loadingText.setVisibility(View.VISIBLE);
-            loadingText.setText("☕ Connecting to Trails Coffee Rewards...");
+            loadingText.setText("Loading...");
         }
+        webView.loadUrl("file:///android_asset/waiting.html");
 
-        // First, try to establish a session cookie via login
-        performBackgroundLogin();
+        // Start polling
+        poller = new RewardPoller(btcpayUrl, storeId, apiKey, new RewardPoller.RewardCallback() {
+            @Override
+            public void onReward(String rewardId, long sats, String lnurl, String qrDataUri, int remainingSeconds) {
+                handler.post(() -> {
+                    if (showingReward && rewardId.equals(currentRewardId)) return;
+                    showingReward = true;
+                    currentRewardId = rewardId;
+                    pendingSats = String.valueOf(sats);
+                    pendingQrDataUri = qrDataUri;
+                    pendingLnurl = lnurl;
+                    pendingRewardId = rewardId;
+                    webView.loadUrl("file:///android_asset/reward.html");
+                });
+            }
+
+            @Override
+            public void onNoReward() {
+                handler.post(() -> {
+                    if (showingReward) {
+                        showingReward = false;
+                        currentRewardId = null;
+                        webView.loadUrl("file:///android_asset/waiting.html");
+                        clearNfcPayload();
+                    }
+                });
+            }
+        });
+        poller.start();
 
         if (nfcEnabled) {
-            // Check NFC is enabled on device
             NfcManager nfcManager = (NfcManager) getSystemService(NFC_SERVICE);
             NfcAdapter nfcAdapter = nfcManager != null ? nfcManager.getDefaultAdapter() : null;
 
@@ -162,7 +181,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Set this app's HCE service as the preferred one (like Numo does)
         if (nfcEnabled) {
             try {
                 NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
@@ -180,7 +198,6 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        // Unset preferred service when app goes to background
         if (nfcEnabled) {
             try {
                 NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
@@ -196,200 +213,38 @@ public class MainActivity extends Activity {
         super.onPause();
     }
 
-    /**
-     * Perform login in background to get session cookie, then load display page.
-     * 
-     * BTCPay login flow:
-     * 1. GET /login — get the anti-forgery token from the form
-     * 2. POST /login — submit email + password + token
-     * 3. Extract Set-Cookie headers
-     * 4. Inject cookies into WebView CookieManager
-     * 5. Load display page
-     */
-    private void performBackgroundLogin() {
+    public void dismissCurrentReward() {
+        if (currentRewardId == null) return;
+        final String rewardId = currentRewardId;
         SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
-        String btcpayUrl = prefs.getString(SettingsActivity.KEY_BTCPAY_URL, "");
-        String email = prefs.getString(SettingsActivity.KEY_EMAIL, "");
-        String password = prefs.getString(SettingsActivity.KEY_PASSWORD, "");
-        String apiKey = prefs.getString(SettingsActivity.KEY_API_KEY, "");
+        final String btcpayUrl = prefs.getString(SettingsActivity.KEY_BTCPAY_URL, "");
+        final String storeId = prefs.getString(SettingsActivity.KEY_STORE_ID, "");
+        final String apiKey = prefs.getString(SettingsActivity.KEY_API_KEY, "");
 
-        if (btcpayUrl.isEmpty() || email.isEmpty()) {
-            startActivity(new Intent(this, SettingsActivity.class));
-            finish();
-            return;
-        }
+        showingReward = false;
+        currentRewardId = null;
+        webView.loadUrl("file:///android_asset/waiting.html");
+        clearNfcPayload();
 
-        new LoginTask().execute(btcpayUrl, email, password, apiKey);
-    }
-
-    private class LoginTask extends AsyncTask<String, Void, Boolean> {
-        private String btcpayUrl;
-        private java.util.List<String> sessionCookies = new java.util.ArrayList<>();
-
-        @Override
-        protected Boolean doInBackground(String... params) {
-            btcpayUrl = params[0];
-            String email = params[1];
-            String password = params[2];
-            String apiKey = params[3];
-
+        new Thread(() -> {
             try {
-                // Step 1: GET /login to get anti-forgery token and initial cookies
-                Log.i(TAG, "Step 1: Fetching login page for anti-forgery token...");
-                URL loginUrl = new URL(btcpayUrl + "/login");
-                HttpURLConnection getConn = (HttpURLConnection) loginUrl.openConnection();
-                getConn.setRequestMethod("GET");
-                getConn.setInstanceFollowRedirects(false);
-
-                int getCode = getConn.getResponseCode();
-                Log.i(TAG, "Login page GET returned: " + getCode);
-
-                // Collect cookies from GET
-                java.util.List<String> getCookies = new java.util.ArrayList<>();
-                Map<String, List<String>> getHeaders = getConn.getHeaderFields();
-                if (getHeaders != null) {
-                    for (Map.Entry<String, List<String>> entry : getHeaders.entrySet()) {
-                        if (entry.getKey() != null && entry.getKey().equalsIgnoreCase("Set-Cookie")) {
-                            getCookies.addAll(entry.getValue());
-                        }
-                    }
-                }
-
-                // Extract anti-forgery token from HTML
-                BufferedReader reader = new BufferedReader(new InputStreamReader(getConn.getInputStream()));
-                StringBuilder html = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) html.append(line);
-                reader.close();
-
-                String antiForgeryToken = "";
-                String body = html.toString();
-                int tokenIdx = body.indexOf("__RequestVerificationToken");
-                if (tokenIdx != -1) {
-                    int valueIdx = body.indexOf("value=\"", tokenIdx);
-                    if (valueIdx != -1) {
-                        valueIdx += 7;
-                        int endIdx = body.indexOf("\"", valueIdx);
-                        if (endIdx != -1) {
-                            antiForgeryToken = body.substring(valueIdx, endIdx);
-                            Log.i(TAG, "Found anti-forgery token: " + antiForgeryToken.substring(0, Math.min(20, antiForgeryToken.length())) + "...");
-                        }
-                    }
-                }
-
-                // Step 2: POST login form
-                Log.i(TAG, "Step 2: Submitting login form...");
-                HttpURLConnection postConn = (HttpURLConnection) loginUrl.openConnection();
-                postConn.setRequestMethod("POST");
-                postConn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-                postConn.setInstanceFollowRedirects(false);
-                postConn.setDoOutput(true);
-
-                // Forward cookies from GET request
-                StringBuilder cookieHeader = new StringBuilder();
-                for (String cookie : getCookies) {
-                    String cookieName = cookie.split(";")[0];
-                    if (cookieHeader.length() > 0) cookieHeader.append("; ");
-                    cookieHeader.append(cookieName);
-                }
-                if (cookieHeader.length() > 0) {
-                    postConn.setRequestProperty("Cookie", cookieHeader.toString());
-                }
-
-                String postBody = "Email=" + java.net.URLEncoder.encode(email, "UTF-8") +
-                    "&Password=" + java.net.URLEncoder.encode(password, "UTF-8") +
-                    "&__RequestVerificationToken=" + java.net.URLEncoder.encode(antiForgeryToken, "UTF-8");
-
-                OutputStream os = postConn.getOutputStream();
-                os.write(postBody.getBytes("UTF-8"));
+                String endpoint = btcpayUrl + "/plugins/bitcoin-rewards/" + storeId + "/dismiss-reward";
+                HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                String body = "{\"rewardId\":\"" + rewardId + "\"}";
+                OutputStream os = conn.getOutputStream();
+                os.write(body.getBytes("UTF-8"));
                 os.flush();
                 os.close();
-
-                int postCode = postConn.getResponseCode();
-                Log.i(TAG, "Login POST returned: " + postCode);
-
-                // Collect ALL cookies (from both GET and POST)
-                sessionCookies.addAll(getCookies);
-                Map<String, List<String>> postHeaders = postConn.getHeaderFields();
-                if (postHeaders != null) {
-                    for (Map.Entry<String, List<String>> entry : postHeaders.entrySet()) {
-                        if (entry.getKey() != null && entry.getKey().equalsIgnoreCase("Set-Cookie")) {
-                            sessionCookies.addAll(entry.getValue());
-                        }
-                    }
-                }
-
-                Log.i(TAG, "Total cookies collected: " + sessionCookies.size());
-                return !sessionCookies.isEmpty() && (postCode == 302 || postCode == 200);
-
+                conn.getResponseCode();
+                conn.disconnect();
             } catch (Exception e) {
-                Log.e(TAG, "Login error: " + e.getMessage(), e);
-                return false;
+                Log.e(TAG, "Dismiss error: " + e.getMessage());
             }
-        }
-
-        @Override
-        protected void onPostExecute(Boolean gotCookies) {
-            CookieManager cookieManager = CookieManager.getInstance();
-
-            if (gotCookies) {
-                // Inject session cookies into WebView
-                for (String cookie : sessionCookies) {
-                    Log.i(TAG, "Setting cookie: " + cookie.substring(0, Math.min(50, cookie.length())) + "...");
-                    cookieManager.setCookie(btcpayUrl, cookie);
-                }
-                cookieManager.flush();
-            }
-
-            // Load the display page with cookies set
-            String displayUrl = SettingsActivity.getDisplayUrl(MainActivity.this);
-            if (displayUrl != null) {
-                Log.i(TAG, "Loading display: " + displayUrl + " (cookies: " + (gotCookies ? "yes" : "no") + ")");
-                webView.loadUrl(displayUrl);
-            }
-        }
-    }
-
-    private void extractLnurlFromPage(WebView view) {
-        view.evaluateJavascript(
-            "(function() {" +
-            "  var el = document.getElementById('nfc-lnurl-data');" +
-            "  if (el && el.dataset.lnurl) return el.dataset.lnurl;" +
-            "  var html = document.body.innerHTML;" +
-            "  var m = html.match(/lnurl[0-9a-zA-Z]{50,}/);" +
-            "  return m ? m[0] : '';" +
-            "})()",
-            value -> {
-                String lnurl = value != null ? value.replace("\"", "").trim() : "";
-                if (!lnurl.isEmpty() && lnurl.startsWith("lnurl")) {
-                    setNfcPayload(lnurl);
-                } else {
-                    clearNfcPayload();
-                }
-            }
-        );
-    }
-
-    /**
-     * Inject a visible NFC tap banner below the QR code
-     */
-    private void injectNfcBanner(WebView view) {
-        String js = "(function() {" +
-            "if (document.getElementById('nfc-tap-banner')) return;" +
-            "var qr = document.querySelector('.qr-code') || document.querySelector('img[alt*=\"QR\"]');" +
-            "if (!qr) { var imgs = document.querySelectorAll('img'); for(var i=0;i<imgs.length;i++){if(imgs[i].width>100){qr=imgs[i];break;}} }" +
-            "if (!qr) return;" +
-            "var banner = document.createElement('div');" +
-            "banner.id = 'nfc-tap-banner';" +
-            "banner.innerHTML = '📱 TAP YOUR PHONE HERE TO CLAIM';" +
-            "banner.style.cssText = 'background:linear-gradient(135deg,#6B4423,#CD853F);color:white;font-size:22px;font-weight:bold;padding:20px;margin:15px auto;border-radius:16px;text-align:center;max-width:400px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 4px 20px rgba(107,68,35,0.5);';" +
-            "var style = document.createElement('style');" +
-            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(107,68,35,0.5)} 50%{transform:scale(1.03);box-shadow:0 6px 30px rgba(107,68,35,0.8)} }';" +
-            "document.head.appendChild(style);" +
-            "var parent = qr.parentElement || qr.parentNode;" +
-            "if (parent) { parent.insertBefore(banner, qr.nextSibling); }" +
-            "})()";
-        view.evaluateJavascript(js, null);
+        }).start();
     }
 
     void setNfcPayload(String lnurl) {
@@ -397,18 +252,9 @@ public class MainActivity extends Activity {
         if (lnurl.equals(currentLnurl)) return;
         currentLnurl = lnurl;
 
-        // Use static method — works even before service is created by Android
         String fullUri = "lightning:" + lnurl;
         NdefHostCardEmulationService.setPayload(fullUri);
-        Log.i(TAG, "✅ NFC payload set (" + fullUri.length() + " chars): " + fullUri.substring(0, Math.min(50, fullUri.length())) + "...");
-        Log.i(TAG, "✅ HCE hasPayload: " + NdefHostCardEmulationService.hasPayload());
-        Log.i(TAG, "✅ HCE instance: " + (NdefHostCardEmulationService.getInstance() != null ? "running" : "waiting for tap"));
-
-        webView.evaluateJavascript(
-            "var ind = document.getElementById('nfc-hce-indicator');" +
-            "if (ind) ind.style.display = 'block';",
-            null
-        );
+        Log.i(TAG, "NFC payload set (" + fullUri.length() + " chars): " + fullUri.substring(0, Math.min(50, fullUri.length())) + "...");
     }
 
     void clearNfcPayload() {
@@ -432,6 +278,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (poller != null) poller.destroy();
         clearNfcPayload();
         super.onDestroy();
     }
