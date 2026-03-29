@@ -354,8 +354,8 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Inject Trails Coffee branding CSS overrides into the BTCPay display page.
-     * Replaces default purple theme with brown gradient branding.
+     * Inject Trails Coffee branding via CSS overrides + full DOM manipulation.
+     * Replaces default purple theme with brown gradient, adds logo, cleans up text.
      */
     private void injectBrandingOverrides(WebView view) {
         String css =
@@ -378,11 +378,67 @@ public class MainActivity extends Activity {
             "a[style*='color: white'] { color: rgba(255,255,255,0.8) !important; }";
 
         String js = "(function() {" +
+            // Guard: only inject once
+            "if (document.getElementById('trails-injected')) return;" +
+            "var marker = document.createElement('meta');" +
+            "marker.id = 'trails-injected';" +
+            "document.head.appendChild(marker);" +
+
+            // CSS overrides
             "var style = document.createElement('style');" +
             "style.id = 'trails-branding';" +
-            "if (document.getElementById('trails-branding')) return;" +
             "style.textContent = " + escapeForJs(css) + ";" +
             "document.head.appendChild(style);" +
+
+            // 1. Add Trails logo at top of container
+            "var container = document.querySelector('.container');" +
+            "if (container && !document.getElementById('trails-logo')) {" +
+            "  var logo = document.createElement('img');" +
+            "  logo.id = 'trails-logo';" +
+            "  logo.src = 'https://trailscoffee.com/LOGO-BROWN.png';" +
+            "  logo.alt = 'Trails Coffee';" +
+            "  logo.style.cssText = 'width:180px;max-width:60%;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;';" +
+            "  container.insertBefore(logo, container.firstChild);" +
+            "}" +
+
+            // 2. Replace text content
+            "document.querySelectorAll('h1, h2, h3, p, div, span, button').forEach(function(el) {" +
+            "  if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {" +
+            "    el.textContent = el.textContent" +
+            "      .replace(/Bitcoin Rewards Display/g, 'Trails Coffee Rewards')" +
+            "      .replace(/Bitcoin Rewards/g, 'Coffee Rewards')" +
+            "      .replace(/Bitcoin-backed rewards/gi, 'Coffee rewards')" +
+            "      .replace(/\\u23F3/g, '\\u2615')" +
+            "      .replace(/Waiting for rewards\\.\\.\\./g, 'Waiting for next customer...')" +
+            "      .replace(/The latest unclaimed reward will appear here automatically/g, 'Rewards appear here automatically after payment')" +
+            "      .replace(/Page refreshes automatically every/g, 'Updates every')" +
+            "      .replace(/Back to Settings/g, '');" +
+            "  }" +
+            "});" +
+
+            // 3. Update page title
+            "document.title = 'Trails Coffee Rewards';" +
+
+            // 4. Remove Back to Settings links
+            "var links = document.querySelectorAll('a');" +
+            "links.forEach(function(a) {" +
+            "  if (a.textContent.includes('Settings') || a.textContent.includes('Back to')) {" +
+            "    a.parentElement.style.display = 'none';" +
+            "  }" +
+            "});" +
+
+            // 5. Fix header h1 and subtitle
+            "var h1 = document.querySelector('.header h1');" +
+            "if (h1) h1.textContent = '\\u2615 Trails Coffee Rewards';" +
+            "var headerP = document.querySelector('.header p');" +
+            "if (headerP) headerP.textContent = 'Anmore, BC';" +
+
+            // 6. Fix waiting message and icon
+            "var waitingMsg = document.querySelector('.waiting-message');" +
+            "if (waitingMsg) waitingMsg.textContent = 'Waiting for next customer...';" +
+            "var waitingIcon = document.querySelector('.waiting-icon');" +
+            "if (waitingIcon) waitingIcon.textContent = '\\u2615';" +
+
             "})()";
 
         view.evaluateJavascript(js, null);

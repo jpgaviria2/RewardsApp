@@ -1,98 +1,91 @@
-# Task: Fix RewardsApp — Revert to WebView + CSS injection
+# Task: v2.3.0 — Full DOM injection for Trails branding
 
-The previous rewrite broke the app by polling a non-existent API endpoint (`/display-data`).
-The real endpoint is `/plugins/bitcoin-rewards/{storeId}/display` which returns HTML, not JSON.
+Enhance the JS/CSS injection in MainActivity.java to do full DOM manipulation, not just CSS overrides.
 
-## What to do
+## Changes to injectBrandingOverrides() in MainActivity.java
 
-Revert MainActivity.java back to the original WebView approach (loading the remote BTCPay display URL),
-but add CSS injection in onPageFinished to replace purple with Trails brown branding.
+Replace the current injectBrandingOverrides() method with a new version that does both CSS + DOM manipulation.
 
-## Step 1: Restore MainActivity.java to WebView approach
+The JS should:
 
-The original flow was:
-1. Load display URL: `{btcpayUrl}/plugins/bitcoin-rewards/{storeId}/display` in WebView
-2. Background login to get session cookie first (LoginTask)
-3. onPageFinished: extractLnurlFromPage + injectNfcBanner
-
-Keep all of that. Just ADD a CSS injection call in onPageFinished BEFORE extractLnurlFromPage.
-
-## Step 2: Add injectBrandingOverrides() method to MainActivity.java
-
-Add this method:
-
-```java
-private void injectBrandingOverrides(WebView view) {
-    String css =
-        "body { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
-        ".header h1 { color: #FFFEF7 !important; }" +
-        ".header p { color: rgba(255,255,255,0.9) !important; }" +
-        ".status-bar { background: rgba(255,255,255,0.2) !important; }" +
-        ".reward-display { background: #FFFEF7 !important; }" +
-        ".reward-display.waiting { background: #FFFEF7 !important; }" +
-        ".waiting-message { color: #6B4423 !important; }" +
-        ".waiting-icon { font-size: 4rem; }" +
-        ".amount { color: #28a745 !important; }" +
-        "h2[style*='color'] { color: #6B4423 !important; }" +
-        ".countdown-timer { color: #6B4423 !important; }" +
-        ".countdown-timer.warning { color: #CD853F !important; }" +
-        ".refresh-button { color: #6B4423 !important; }" +
-        ".refresh-button:hover { background: #6B4423 !important; color: white !important; }" +
-        ".done-button { background: linear-gradient(135deg, #6B4423, #CD853F) !important; border-color: #6B4423 !important; }" +
-        "#nfc-tap-btn { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
-        "a[style*='color: white'] { color: rgba(255,255,255,0.8) !important; }";
-
-    String js = "(function() {" +
-        "var style = document.createElement('style');" +
-        "style.id = 'trails-branding';" +
-        "if (document.getElementById('trails-branding')) return;" +
-        "style.textContent = " + escapeForJs(css) + ";" +
-        "document.head.appendChild(style);" +
-        "})()";
-
-    view.evaluateJavascript(js, null);
-}
-
-private String escapeForJs(String s) {
-    return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
+### 1. Add Trails logo at the top of the container
+Insert a logo image before the .header div (or as first child of .container):
+```javascript
+var container = document.querySelector('.container');
+if (container && !document.getElementById('trails-logo')) {
+    var logo = document.createElement('img');
+    logo.id = 'trails-logo';
+    logo.src = 'https://trailscoffee.com/LOGO-BROWN.png';
+    logo.alt = 'Trails Coffee';
+    logo.style.cssText = 'width:180px;max-width:60%;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;';
+    container.insertBefore(logo, container.firstChild);
 }
 ```
 
-## Step 3: Call injectBrandingOverrides in onPageFinished
-
-In the WebViewClient onPageFinished, add this call right after hiding the loading overlay:
-
-```java
-injectBrandingOverrides(view);
+### 2. Replace all instances of "Bitcoin Rewards" text with "Coffee Rewards"
+```javascript
+document.querySelectorAll('h1, h2, h3, p, div, span, button').forEach(function(el) {
+    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+        el.textContent = el.textContent
+            .replace(/Bitcoin Rewards Display/g, 'Trails Coffee Rewards')
+            .replace(/Bitcoin Rewards/g, 'Coffee Rewards')
+            .replace(/Bitcoin-backed rewards/gi, 'Coffee rewards')
+            .replace(/⏳/g, '☕')
+            .replace(/Waiting for rewards\.\.\./g, 'Waiting for next customer...')
+            .replace(/The latest unclaimed reward will appear here automatically/g, 'Rewards appear here automatically after payment')
+            .replace(/Page refreshes automatically every/g, 'Updates every')
+            .replace(/Back to Settings/g, '');
+    }
+});
 ```
 
-Call it before extractLnurlFromPage and injectNfcBanner.
+### 3. Update page title
+```javascript
+document.title = 'Trails Coffee Rewards';
+```
 
-## Step 4: Delete RewardPoller.java and the asset HTML files
+### 4. Remove "Back to Settings" link entirely
+```javascript
+var links = document.querySelectorAll('a');
+links.forEach(function(a) {
+    if (a.textContent.includes('Settings') || a.textContent.includes('Back to')) {
+        a.parentElement.style.display = 'none';
+    }
+});
+```
 
-Delete:
-- app/src/main/java/com/bitcoinrewards/nfcdisplay/RewardPoller.java
-- app/src/main/assets/waiting.html (if exists)
-- app/src/main/assets/reward.html (if exists)
+### 5. Fix the header h1 text
+```javascript
+var h1 = document.querySelector('.header h1');
+if (h1) h1.textContent = '☕ Trails Coffee Rewards';
+var headerP = document.querySelector('.header p');
+if (headerP) headerP.textContent = 'Anmore, BC';
+```
 
-Restore the original MainActivity flow — load remote URL, background login, CSS injection on page load.
+### 6. Fix waiting message
+```javascript
+var waitingMsg = document.querySelector('.waiting-message');
+if (waitingMsg) waitingMsg.textContent = 'Waiting for next customer...';
+var waitingIcon = document.querySelector('.waiting-icon');
+if (waitingIcon) waitingIcon.textContent = '☕';
+```
 
-The original MainActivity.java is in git history. Use git to restore the original if needed, or rewrite it based on the original structure described above.
+### 7. Keep all existing CSS overrides from the current injectBrandingOverrides() method
 
-## Step 5: Check AndroidBridge.java
+## Full updated injectBrandingOverrides() + escapeForJs()
 
-Make sure AndroidBridge.java still has the original methods. Remove the dismiss() method if it references MainActivity.dismissCurrentReward() since that method won't exist anymore.
+Write a clean combined method that does all the above in one evaluateJavascript call.
+Use a single large JS string, wrapping everything in an IIFE: (function() { ... })()
+Guard with: if (document.getElementById('trails-injected')) return; then set document.getElementById or add a marker element.
 
-## Step 6: Bump version
+## Bump version
+app/build.gradle: versionCode 13, versionName "2.3.0"
 
-app/build.gradle: versionCode 12, versionName "2.2.0"
-
-## Step 7: Commit and push
-
+## Commit and push
 ```bash
 git add -A
-git commit -m "fix: revert to WebView + CSS injection for Trails branding"
+git commit -m "feat: full DOM injection — logo, text cleanup, remove Bitcoin branding v2.3.0"
 git push
 ```
 
-When completely finished, run: openclaw system event --text "Done: RewardsApp v2.2.0 fixed — WebView with CSS branding injection" --mode now
+When completely finished, run: openclaw system event --text "Done: RewardsApp v2.3.0 full DOM injection built and pushed" --mode now
