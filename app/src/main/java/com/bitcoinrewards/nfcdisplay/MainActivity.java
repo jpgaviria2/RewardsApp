@@ -364,7 +364,7 @@ public class MainActivity extends Activity {
             ".header p { color: rgba(255,255,255,0.9) !important; }" +
             ".status-bar { background: rgba(255,255,255,0.2) !important; }" +
             ".reward-display { background: #FFFEF7 !important; }" +
-            ".reward-display.waiting { background: #FFFEF7 !important; }" +
+            ".reward-display.waiting { background: transparent !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; border: none !important; }" +
             ".waiting-message { color: #6B4423 !important; }" +
             ".waiting-icon { font-size: 4rem; }" +
             ".amount { color: #28a745 !important; }" +
@@ -416,16 +416,39 @@ public class MainActivity extends Activity {
             "  });" +
             "}" +
 
+            // Make waiting card fully transparent
+            "if (waitingDisplay) {" +
+            "  waitingDisplay.style.background = 'transparent';" +
+            "  waitingDisplay.style.boxShadow = 'none';" +
+            "  waitingDisplay.style.padding = '0';" +
+            "  waitingDisplay.style.margin = '0';" +
+            "  waitingDisplay.style.borderRadius = '0';" +
+            "  waitingDisplay.style.border = 'none';" +
+            "}" +
+
+            // Make container full-width with no padding
+            "var container2 = document.querySelector('.container');" +
+            "if (container2) {" +
+            "  container2.style.padding = '0';" +
+            "  container2.style.width = '100%';" +
+            "  container2.style.maxWidth = '100%';" +
+            "}" +
+
+            // Tighten logo wrap margins
+            "var logoWrap2 = document.getElementById('trails-logo-wrap');" +
+            "if (logoWrap2) {" +
+            "  logoWrap2.style.marginBottom = '12px';" +
+            "  logoWrap2.style.marginTop = '16px';" +
+            "}" +
+
             // Add full-width promo image on waiting screen
             "if (waitingDisplay && !document.getElementById('app-promo-img')) {" +
-            "  waitingDisplay.style.padding = '0';" +
             "  waitingDisplay.style.overflow = 'hidden';" +
-            "  waitingDisplay.style.borderRadius = '20px';" +
             "  var promoImg = document.createElement('img');" +
             "  promoImg.id = 'app-promo-img';" +
             "  promoImg.src = 'https://staff.trailscoffee.com/app-promo.jpg';" +
             "  promoImg.alt = 'Download Trails Coffee App';" +
-            "  promoImg.style.cssText = 'width:100%;height:auto;display:block;border-radius:0;margin:0;';" +
+            "  promoImg.style.cssText = 'width:100%;max-width:100%;height:auto;display:block;border-radius:16px;margin:0;';" +
             "  waitingDisplay.appendChild(promoImg);" +
             "}" +
 

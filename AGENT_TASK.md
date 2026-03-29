@@ -1,83 +1,69 @@
-# Task: v2.6.0 — Make promo image fill entire waiting card
+# Task: v2.7.0 — Remove white card background on waiting screen
 
-The goal: the waiting screen card should be ONLY the logo + full-width promo image. No text, no icon, no "Waiting for next customer..." — just the image taking up the whole card.
+The white area showing around the promo image is the .reward-display.waiting card background.
+Fix: make the card fully transparent with no padding, no shadow, no background — just the image.
 
 ## Changes to injectBrandingOverrides() in MainActivity.java
 
-### 1. Hide all existing waiting card content except the card itself
+### 1. Make the waiting card transparent and remove all spacing
 
 ```javascript
-// Hide waiting screen text content
-var waitingIcon = document.querySelector('.waiting-icon');
-if (waitingIcon) waitingIcon.style.display = 'none';
-
-var waitingMsg = document.querySelector('.waiting-message');
-if (waitingMsg) waitingMsg.style.display = 'none';
-
-// Hide all <p> tags inside the waiting card
 var waitingDisplay = document.querySelector('.reward-display.waiting');
 if (waitingDisplay) {
-    waitingDisplay.querySelectorAll('p').forEach(function(p) {
-        p.style.display = 'none';
-    });
-}
-```
-
-### 2. Make the promo image fill the full card width with no padding
-
-Replace the current promo image injection with:
-
-```javascript
-var waitingDisplay = document.querySelector('.reward-display.waiting');
-if (waitingDisplay && !document.getElementById('app-promo-img')) {
-    // Remove card padding so image goes edge to edge
+    waitingDisplay.style.background = 'transparent';
+    waitingDisplay.style.boxShadow = 'none';
     waitingDisplay.style.padding = '0';
-    waitingDisplay.style.overflow = 'hidden';
-    waitingDisplay.style.borderRadius = '20px';
-
-    var promoImg = document.createElement('img');
-    promoImg.id = 'app-promo-img';
-    promoImg.src = 'https://staff.trailscoffee.com/app-promo.jpg';
-    promoImg.alt = 'Download Trails Coffee App';
-    promoImg.style.cssText = 'width:100%;height:auto;display:block;border-radius:0;margin:0;';
-    waitingDisplay.appendChild(promoImg);
+    waitingDisplay.style.margin = '0';
+    waitingDisplay.style.borderRadius = '0';
+    waitingDisplay.style.border = 'none';
 }
 ```
 
-### 3. Also hide the status bar ("Auto-refresh: 10 seconds | Timeframe: 60 minutes")
+### 2. Also make the container have no gap between logo and image
 
 ```javascript
-var statusBar = document.querySelector('.status-bar');
-if (statusBar) statusBar.style.display = 'none';
+var container = document.querySelector('.container');
+if (container) {
+    container.style.padding = '0';
+    container.style.width = '100%';
+    container.style.maxWidth = '100%';
+}
 ```
 
-### 4. Also hide the refresh button at the bottom
+### 3. Make the logo wrap margin smaller
 
 ```javascript
-document.querySelectorAll('.refresh-button').forEach(function(btn) {
-    btn.style.display = 'none';
-});
+var logoWrap = document.getElementById('trails-logo-wrap');
+if (logoWrap) {
+    logoWrap.style.marginBottom = '12px';
+    logoWrap.style.marginTop = '16px';
+}
 ```
 
-### 5. Also hide the footer ("Page refreshes automatically every X seconds")
+### 4. Make the promo image fully rounded to match the card style (or square, no radius)
+
+The image already has border-radius:0 — keep that. But also make sure the image width is 100vw essentially:
 
 ```javascript
-var footer = document.querySelector('.footer');
-if (footer) footer.style.display = 'none';
+var promoImg = document.getElementById('app-promo-img');
+if (promoImg) {
+    promoImg.style.width = '100%';
+    promoImg.style.maxWidth = '100%';
+    promoImg.style.borderRadius = '16px';
+    promoImg.style.display = 'block';
+}
 ```
 
-### 6. Keep the logo wrap at top (outside the card, in .container)
-
-The logo stays as-is in the container above the card. No changes needed there.
+Give it a 16px border radius to look polished since there's no card wrapping it anymore.
 
 ## Bump version
-app/build.gradle: versionCode 16, versionName "2.6.0"
+app/build.gradle: versionCode 17, versionName "2.7.0"
 
 ## Commit and push
 ```bash
 git add -A
-git commit -m "feat: full-width promo image on waiting screen, hide status bar and footer v2.6.0"
+git commit -m "fix: transparent waiting card — no white background showing v2.7.0"
 git push
 ```
 
-When completely finished, run: openclaw system event --text "Done: RewardsApp v2.6.0 full-width waiting image" --mode now
+When completely finished, run: openclaw system event --text "Done: RewardsApp v2.7.0 white area fixed" --mode now
