@@ -404,6 +404,22 @@ public class MainActivity extends Activity {
             "  container.insertBefore(wrap, container.firstChild);" +
             "}" +
 
+            // Add app promo image on waiting screen
+            "var waitingDisplay = document.querySelector('.reward-display.waiting');" +
+            "if (waitingDisplay && !document.getElementById('app-promo-img')) {" +
+            "  var promoImg = document.createElement('img');" +
+            "  promoImg.id = 'app-promo-img';" +
+            "  promoImg.src = 'https://staff.trailscoffee.com/app-promo.jpg';" +
+            "  promoImg.alt = 'Download Trails Coffee App';" +
+            "  promoImg.style.cssText = 'width:100%;max-width:320px;border-radius:20px;margin:20px auto 0;display:block;box-shadow:0 8px 30px rgba(0,0,0,0.3);';" +
+            "  var iosWait = document.getElementById('ios-waiting-section');" +
+            "  if (iosWait) {" +
+            "    waitingDisplay.insertBefore(promoImg, iosWait);" +
+            "  } else {" +
+            "    waitingDisplay.appendChild(promoImg);" +
+            "  }" +
+            "}" +
+
             // 2. Replace text content
             "document.querySelectorAll('h1, h2, h3, p, div, span, button').forEach(function(el) {" +
             "  if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {" +
@@ -469,18 +485,6 @@ public class MainActivity extends Activity {
             "    '<div style=\"font-size:13px;opacity:0.9;margin-bottom:12px;\">Download from the App Store to collect & redeem your sats</div>' +" +
             "    '<a href=\"https://apps.apple.com/app/id6741817829\" style=\"background:white;color:#6B4423;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;\">\\u2B07\\uFE0F Download on App Store</a>';" +
             "  qrDiv.parentNode.insertBefore(iosSection, qrDiv.nextSibling);" +
-            "}" +
-
-            // 10. Add iOS section on waiting screen
-            "var waitingDisplay = document.querySelector('.reward-display.waiting');" +
-            "if (waitingDisplay && !document.getElementById('ios-waiting-section')) {" +
-            "  var iosWait = document.createElement('div');" +
-            "  iosWait.id = 'ios-waiting-section';" +
-            "  iosWait.style.cssText = 'background:linear-gradient(135deg,#6B4423,#8B4513);color:white;padding:14px 18px;border-radius:12px;margin-top:20px;';" +
-            "  iosWait.innerHTML = '<div style=\"font-size:14px;font-weight:700;margin-bottom:4px;\">\\uD83D\\uDCF1 Trails Coffee App</div>' +" +
-            "    '<div style=\"font-size:12px;opacity:0.9;margin-bottom:10px;\">Collect & redeem your Bitcoin rewards</div>' +" +
-            "    '<a href=\"https://apps.apple.com/app/id6741817829\" style=\"background:white;color:#6B4423;padding:8px 18px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block;\">Download on App Store</a>';" +
-            "  waitingDisplay.appendChild(iosWait);" +
             "}" +
 
             "})()";
