@@ -528,6 +528,55 @@ public class MainActivity extends Activity {
             "  qrDiv.parentNode.insertBefore(iosSection, qrDiv.nextSibling);" +
             "}" +
 
+            // Hide header text on waiting screen only
+            "if (document.querySelector('.reward-display.waiting')) {" +
+            "  var headerH1 = document.querySelector('.header h1');" +
+            "  if (headerH1) headerH1.style.display = 'none';" +
+            "  var headerP = document.querySelector('.header p');" +
+            "  if (headerP) headerP.style.display = 'none';" +
+            "}" +
+
+            // Shrink the logo wrap
+            "var logoWrap = document.getElementById('trails-logo-wrap');" +
+            "if (logoWrap) {" +
+            "  logoWrap.style.padding = '10px 16px';" +
+            "  logoWrap.style.marginBottom = '8px';" +
+            "  logoWrap.style.marginTop = '8px';" +
+            "}" +
+            "var logoImg = logoWrap ? logoWrap.querySelector('img') : null;" +
+            "if (logoImg) {" +
+            "  logoImg.style.width = '100px';" +
+            "}" +
+
+            // Make promo image fill remaining viewport height
+            "var promoImg = document.getElementById('app-promo-img');" +
+            "if (promoImg) {" +
+            "  promoImg.style.width = '100%';" +
+            "  promoImg.style.maxWidth = '100%';" +
+            "  promoImg.style.maxHeight = '75vh';" +
+            "  promoImg.style.objectFit = 'cover';" +
+            "  promoImg.style.objectPosition = 'top';" +
+            "  promoImg.style.borderRadius = '16px';" +
+            "  promoImg.style.display = 'block';" +
+            "}" +
+
+            // Make body not scroll on waiting screen
+            "if (document.querySelector('.reward-display.waiting')) {" +
+            "  document.body.style.overflow = 'hidden';" +
+            "  document.body.style.height = '100vh';" +
+            "}" +
+
+            // Make container use flexbox to fill height properly
+            "var container = document.querySelector('.container');" +
+            "if (container && document.querySelector('.reward-display.waiting')) {" +
+            "  container.style.display = 'flex';" +
+            "  container.style.flexDirection = 'column';" +
+            "  container.style.alignItems = 'center';" +
+            "  container.style.minHeight = '100vh';" +
+            "  container.style.justifyContent = 'flex-start';" +
+            "  container.style.paddingTop = '0';" +
+            "}" +
+
             "})()";
 
         view.evaluateJavascript(js, null);
