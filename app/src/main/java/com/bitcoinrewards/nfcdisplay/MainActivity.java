@@ -390,15 +390,18 @@ public class MainActivity extends Activity {
             "style.textContent = " + escapeForJs(css) + ";" +
             "document.head.appendChild(style);" +
 
-            // 1. Add Trails logo at top of container
+            // 1. Add Trails logo wrapped in cream pill background
             "var container = document.querySelector('.container');" +
-            "if (container && !document.getElementById('trails-logo')) {" +
+            "if (container && !document.getElementById('trails-logo-wrap')) {" +
+            "  var wrap = document.createElement('div');" +
+            "  wrap.id = 'trails-logo-wrap';" +
+            "  wrap.style.cssText = 'background:#FFFEF7;border-radius:20px;padding:16px 24px;margin-bottom:20px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,0.2);';" +
             "  var logo = document.createElement('img');" +
-            "  logo.id = 'trails-logo';" +
             "  logo.src = 'https://trailscoffee.com/LOGO-BROWN.png';" +
             "  logo.alt = 'Trails Coffee';" +
-            "  logo.style.cssText = 'width:180px;max-width:60%;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;';" +
-            "  container.insertBefore(logo, container.firstChild);" +
+            "  logo.style.cssText = 'width:160px;max-width:55%;display:block;';" +
+            "  wrap.appendChild(logo);" +
+            "  container.insertBefore(wrap, container.firstChild);" +
             "}" +
 
             // 2. Replace text content
@@ -438,6 +441,47 @@ public class MainActivity extends Activity {
             "if (waitingMsg) waitingMsg.textContent = 'Waiting for next customer...';" +
             "var waitingIcon = document.querySelector('.waiting-icon');" +
             "if (waitingIcon) waitingIcon.textContent = '\\u2615';" +
+
+            // 7. Remove NFC banner and related sections
+            "var nfcBanner = document.getElementById('nfc-tap-banner');" +
+            "if (nfcBanner) nfcBanner.remove();" +
+            "var nfcSection = document.getElementById('nfc-section');" +
+            "if (nfcSection) nfcSection.style.display = 'none';" +
+            "var nfcIndicator = document.getElementById('nfc-hce-indicator');" +
+            "if (nfcIndicator) nfcIndicator.style.display = 'none';" +
+
+            // 8. MutationObserver to keep NFC banner removed (it gets injected after branding)
+            "var observer = new MutationObserver(function() {" +
+            "  var b = document.getElementById('nfc-tap-banner');" +
+            "  if (b) b.remove();" +
+            "  var s = document.getElementById('nfc-section');" +
+            "  if (s) s.style.display = 'none';" +
+            "});" +
+            "observer.observe(document.body, {childList: true, subtree: true});" +
+
+            // 9. Add iOS App Store section below QR code
+            "var qrDiv = document.querySelector('.qr-code');" +
+            "if (qrDiv && !document.getElementById('ios-download-section')) {" +
+            "  var iosSection = document.createElement('div');" +
+            "  iosSection.id = 'ios-download-section';" +
+            "  iosSection.style.cssText = 'background:linear-gradient(135deg,#6B4423,#8B4513);color:white;padding:16px 20px;border-radius:12px;margin:16px 0;text-align:center;';" +
+            "  iosSection.innerHTML = '<div style=\"font-size:15px;font-weight:700;margin-bottom:6px;\">\\uD83D\\uDCF1 Claim on the Trails Coffee App</div>' +" +
+            "    '<div style=\"font-size:13px;opacity:0.9;margin-bottom:12px;\">Download from the App Store to collect & redeem your sats</div>' +" +
+            "    '<a href=\"https://apps.apple.com/app/id6741817829\" style=\"background:white;color:#6B4423;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;\">\\u2B07\\uFE0F Download on App Store</a>';" +
+            "  qrDiv.parentNode.insertBefore(iosSection, qrDiv.nextSibling);" +
+            "}" +
+
+            // 10. Add iOS section on waiting screen
+            "var waitingDisplay = document.querySelector('.reward-display.waiting');" +
+            "if (waitingDisplay && !document.getElementById('ios-waiting-section')) {" +
+            "  var iosWait = document.createElement('div');" +
+            "  iosWait.id = 'ios-waiting-section';" +
+            "  iosWait.style.cssText = 'background:linear-gradient(135deg,#6B4423,#8B4513);color:white;padding:14px 18px;border-radius:12px;margin-top:20px;';" +
+            "  iosWait.innerHTML = '<div style=\"font-size:14px;font-weight:700;margin-bottom:4px;\">\\uD83D\\uDCF1 Trails Coffee App</div>' +" +
+            "    '<div style=\"font-size:12px;opacity:0.9;margin-bottom:10px;\">Collect & redeem your Bitcoin rewards</div>' +" +
+            "    '<a href=\"https://apps.apple.com/app/id6741817829\" style=\"background:white;color:#6B4423;padding:8px 18px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;display:inline-block;\">Download on App Store</a>';" +
+            "  waitingDisplay.appendChild(iosWait);" +
+            "}" +
 
             "})()";
 
