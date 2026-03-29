@@ -404,21 +404,43 @@ public class MainActivity extends Activity {
             "  container.insertBefore(wrap, container.firstChild);" +
             "}" +
 
-            // Add app promo image on waiting screen
+            // Hide waiting screen text content
+            "var waitingIcon = document.querySelector('.waiting-icon');" +
+            "if (waitingIcon) waitingIcon.style.display = 'none';" +
+            "var waitingMsg = document.querySelector('.waiting-message');" +
+            "if (waitingMsg) waitingMsg.style.display = 'none';" +
             "var waitingDisplay = document.querySelector('.reward-display.waiting');" +
+            "if (waitingDisplay) {" +
+            "  waitingDisplay.querySelectorAll('p').forEach(function(p) {" +
+            "    p.style.display = 'none';" +
+            "  });" +
+            "}" +
+
+            // Add full-width promo image on waiting screen
             "if (waitingDisplay && !document.getElementById('app-promo-img')) {" +
+            "  waitingDisplay.style.padding = '0';" +
+            "  waitingDisplay.style.overflow = 'hidden';" +
+            "  waitingDisplay.style.borderRadius = '20px';" +
             "  var promoImg = document.createElement('img');" +
             "  promoImg.id = 'app-promo-img';" +
             "  promoImg.src = 'https://staff.trailscoffee.com/app-promo.jpg';" +
             "  promoImg.alt = 'Download Trails Coffee App';" +
-            "  promoImg.style.cssText = 'width:100%;max-width:320px;border-radius:20px;margin:20px auto 0;display:block;box-shadow:0 8px 30px rgba(0,0,0,0.3);';" +
-            "  var iosWait = document.getElementById('ios-waiting-section');" +
-            "  if (iosWait) {" +
-            "    waitingDisplay.insertBefore(promoImg, iosWait);" +
-            "  } else {" +
-            "    waitingDisplay.appendChild(promoImg);" +
-            "  }" +
+            "  promoImg.style.cssText = 'width:100%;height:auto;display:block;border-radius:0;margin:0;';" +
+            "  waitingDisplay.appendChild(promoImg);" +
             "}" +
+
+            // Hide status bar
+            "var statusBar = document.querySelector('.status-bar');" +
+            "if (statusBar) statusBar.style.display = 'none';" +
+
+            // Hide refresh button
+            "document.querySelectorAll('.refresh-button').forEach(function(btn) {" +
+            "  btn.style.display = 'none';" +
+            "});" +
+
+            // Hide footer
+            "var footer = document.querySelector('.footer');" +
+            "if (footer) footer.style.display = 'none';" +
 
             // 2. Replace text content
             "document.querySelectorAll('h1, h2, h3, p, div, span, button').forEach(function(el) {" +
@@ -452,11 +474,7 @@ public class MainActivity extends Activity {
             "var headerP = document.querySelector('.header p');" +
             "if (headerP) headerP.textContent = 'Anmore, BC';" +
 
-            // 6. Fix waiting message and icon
-            "var waitingMsg = document.querySelector('.waiting-message');" +
-            "if (waitingMsg) waitingMsg.textContent = 'Waiting for next customer...';" +
-            "var waitingIcon = document.querySelector('.waiting-icon');" +
-            "if (waitingIcon) waitingIcon.textContent = '\\u2615';" +
+            // 6. Waiting message and icon are now hidden (see above)
 
             // 7. Remove NFC banner and related sections
             "var nfcBanner = document.getElementById('nfc-tap-banner');" +
