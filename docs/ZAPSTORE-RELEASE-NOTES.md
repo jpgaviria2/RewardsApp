@@ -1,5 +1,5 @@
-# Rewards NFC Display 2.11.2
+# Rewards NFC Display 2.12.0
 
-- Resets the kiosk WebView scroll to the top after the display reloads.
-- Keeps the always-on scanner behavior from 2.11.x.
-- Intended to pair with Bitcoin Rewards plugin 1.7.6, which changes a scanned customer from “Waiting” to a visible “Ready to reward” display state.
+- Moves the always-on rewards camera scanner to the top of the kiosk display.
+- Simplifies the counter layout so the customer sees scanner first, then the BTCPay display card below.
+- Keeps front-camera scanning, camera flip, scan confirmation, and WebView recovery behavior.

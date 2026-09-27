@@ -350,12 +350,12 @@ public class MainActivity extends Activity {
         rewardsScannerPanel.setVisibility(View.VISIBLE);
         LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
         params.weight = 0f;
-        params.height = dp(rewardVisible ? 210 : 240);
+        params.height = dp(rewardVisible ? 240 : 270);
         rewardsScannerPanel.setLayoutParams(params);
         inlineRewardsScanner.setStatusText("");
         setRewardsScannerStatus(rewardVisible
-            ? "Reward QR is available below — scanner stays ready for the next customer"
-            : "Front camera ready — show your wallet Lightning address QR");
+            ? "Scanner ready for next customer"
+            : "Scan wallet Lightning address QR");
         if (!inlineScannerRunning) {
             configureInlineRewardsCamera();
             inlineRewardsScanner.decodeContinuous(inlineRewardsCallback);
@@ -390,7 +390,7 @@ public class MainActivity extends Activity {
             inlineRewardsScanner.decodeContinuous(inlineRewardsCallback);
             inlineRewardsScanner.resume();
             inlineScannerRunning = true;
-            setRewardsScannerStatus((useFrontRewardsCamera ? "Front" : "Back") + " camera ready — show wallet Lightning address QR");
+            setRewardsScannerStatus((useFrontRewardsCamera ? "Front" : "Back") + " camera ready");
         }
     }
 
@@ -502,7 +502,7 @@ public class MainActivity extends Activity {
         protected void onPostExecute(Boolean ok) {
             inlineSubmissionInFlight = false;
             if (ok) {
-                setRewardsScannerStatus("✅ Waiting to reward " + maskLightningAddress(lightningAddress));
+                setRewardsScannerStatus("✅ Ready to reward " + maskLightningAddress(lightningAddress));
                 Toast.makeText(MainActivity.this, "Rewards profile saved: " + maskLightningAddress(lightningAddress), Toast.LENGTH_LONG).show();
                 vibrate(180);
                 webView.reload();

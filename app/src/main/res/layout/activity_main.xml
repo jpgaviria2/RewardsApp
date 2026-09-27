@@ -7,72 +7,72 @@
         android:id="@+id/main_split_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
-
-        <WebView
-            android:id="@+id/webview"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="2" />
+        android:orientation="vertical"
+        android:background="#173F2F">
 
         <LinearLayout
             android:id="@+id/rewards_scanner_panel"
             android:layout_width="match_parent"
-            android:layout_height="240dp"
+            android:layout_height="270dp"
             android:orientation="vertical"
             android:background="#101820"
             android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
-                android:background="#CC101820">
-
-                <TextView
-                    android:id="@+id/rewards_scanner_status"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Front camera ready — show your wallet Lightning address QR"
-                    android:textColor="#FFFFFF"
-                    android:textStyle="bold"
-                    android:textSize="14sp"
-                    android:maxLines="2" />
-
-                <Button
-                    android:id="@+id/btn_flip_inline_camera"
-                    android:layout_width="wrap_content"
-                    android:layout_height="38dp"
-                    android:text="Flip"
-                    android:textAllCaps="false" />
-            </LinearLayout>
 
             <com.journeyapps.barcodescanner.DecoratedBarcodeView
                 android:id="@+id/inline_rewards_scanner"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:background="#E6173F2F">
+
+                <TextView
+                    android:id="@+id/rewards_scanner_status"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Scan wallet Lightning address QR"
+                    android:textColor="#F4EDDF"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:maxLines="1" />
+
+                <Button
+                    android:id="@+id/btn_flip_inline_camera"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:minHeight="0dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="Flip"
+                    android:textAllCaps="false" />
+            </LinearLayout>
         </LinearLayout>
+
+        <WebView
+            android:id="@+id/webview"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
     </LinearLayout>
 
-    <!-- Loading overlay -->
     <TextView
         android:id="@+id/loading_text"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:background="#1a1a2e"
-        android:textColor="#aaaacc"
+        android:background="#173F2F"
+        android:textColor="#F4EDDF"
         android:textSize="20sp"
         android:visibility="gone" />
 
-    <!-- Settings gear button (top-right corner) -->
     <ImageButton
         android:id="@+id/btn_settings"
         android:layout_width="48dp"
@@ -82,9 +82,8 @@
         android:src="@android:drawable/ic_menu_manage"
         android:background="@android:color/transparent"
         android:contentDescription="Settings"
-        android:alpha="0.4" />
+        android:alpha="0.28" />
 
-    <!-- NFC tap feedback overlay -->
     <TextView
         android:id="@+id/nfc_tap_overlay"
         android:layout_width="match_parent"
@@ -96,7 +95,6 @@
         android:text="📡 Tap detected!"
         android:visibility="gone" />
 
-    <!-- NFC reader success overlay -->
     <TextView
         android:id="@+id/nfc_reader_overlay"
         android:layout_width="match_parent"
