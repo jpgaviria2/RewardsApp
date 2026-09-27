@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.7
+# Rewards NFC Display v2.9.8
 
 Clean standalone RewardsApp production release.
 
@@ -29,3 +29,9 @@ Clean standalone RewardsApp production release.
 - Scan BTCPay Login QR now saves and launches the display automatically after a successful login; no separate Save & Launch tap is required.
 
 - Store the full BTCPay Set-Cookie lines and replay them into the WebView to keep the login-code session active when launching display.
+
+- Remove the manual Login with BTCPay Code button from setup; the native QR scan now owns the login flow.
+
+- Treat HTTP 200 from BTCPay login-code exchange as not authenticated instead of saving a partial login-page cookie; only redirect responses with session cookies are accepted.
+
+- Add login-flow diagnostics for session cookie replay and BTCPay login redirects.

@@ -142,6 +142,7 @@ public class MainActivity extends Activity {
                     Log.i(TAG, "Login page shown in WebView — user can log in manually");
                     updateRewardsProfileScanVisibility(url);
                     if (isLoginCodeAuth()) {
+                        Log.w(TAG, "Login-code WebView was redirected to BTCPay login page: " + url);
                         Toast.makeText(MainActivity.this, "BTCPay session expired. Scan the login QR in app settings.", Toast.LENGTH_LONG).show();
                         startActivity(new Intent(MainActivity.this, SettingsActivity.class));
                         finish();
@@ -317,6 +318,7 @@ public class MainActivity extends Activity {
             }
         }
         cookieManager.flush();
+        Log.i(TAG, "Applied saved BTCPay session cookies: " + applied);
         return applied;
     }
 

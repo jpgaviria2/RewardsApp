@@ -378,6 +378,8 @@ public class SettingsActivity extends Activity {
                 conn.setReadTimeout(15000);
 
                 int code = conn.getResponseCode();
+                String location = conn.getHeaderField("Location");
+                Log.i(TAG, "Login code exchange returned HTTP " + code + " location=" + (location == null ? "" : location));
                 Map<String, List<String>> headers = conn.getHeaderFields();
                 if (headers != null) {
                     for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
@@ -386,8 +388,12 @@ public class SettingsActivity extends Activity {
                         }
                     }
                 }
+                if (code == 200) {
+                    error = "BTCPay did not accept the login code. Generate a fresh code and scan it immediately.";
+                    return null;
+                }
 
-                if ((code == 302 || code == 303 || code == 200) && !sessionCookies.isEmpty()) {
+                if ((code == 302 || code == 303) && !sessionCookies.isEmpty()) {
                     if (storeId == null || storeId.isEmpty()) {
                         publishProgress("Finding stores...");
                         if (!fetchStoresWithSessionCookies()) {
