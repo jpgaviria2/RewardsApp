@@ -53,6 +53,7 @@ public class SettingsActivity extends Activity {
     public static final String KEY_EMAIL = "email";
     public static final String KEY_PASSWORD = "password";
     public static final String KEY_AUTH_METHOD = "auth_method";
+    public static final String KEY_SESSION_COOKIES = "session_cookies";
     public static final String AUTH_METHOD_PASSWORD = "password";
     public static final String AUTH_METHOD_LOGIN_CODE = "login_code";
     public static final String KEY_REFRESH_SECONDS = "refresh_seconds";
@@ -78,6 +79,7 @@ public class SettingsActivity extends Activity {
     private String selectedStoreName = null;
     private JSONArray availableStores = null;
     private int currentStoreIndex = 0;
+    private String loginCodeSessionCookies = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -465,10 +467,12 @@ public class SettingsActivity extends Activity {
             btnConnect.setEnabled(true);
             if (result != null) {
                 android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+                String cookieHeader = buildCookieHeader();
                 for (String cookie : sessionCookies) {
                     cookieManager.setCookie(serverUrl, cookie);
                 }
                 cookieManager.flush();
+                loginCodeSessionCookies = cookieHeader;
                 statusText.setText("✅ Login code accepted. Ready to save.");
                 storeSection.setVisibility(View.VISIBLE);
                 storeInfo.setText("🏪 " + storeId);
@@ -645,6 +649,7 @@ public class SettingsActivity extends Activity {
         editor.putString(KEY_STORE_NAME, selectedStoreName);
         editor.putString(KEY_API_KEY, apiKey == null ? "" : apiKey);
         editor.putString(KEY_AUTH_METHOD, apiKey == null ? AUTH_METHOD_LOGIN_CODE : AUTH_METHOD_PASSWORD);
+        editor.putString(KEY_SESSION_COOKIES, apiKey == null ? loginCodeSessionCookies : "");
         editor.putInt(KEY_REFRESH_SECONDS, refreshSeconds);
         editor.putBoolean(KEY_NFC_ENABLED, switchNfc.isChecked());
         editor.putBoolean(KEY_ONBOARDED, true);

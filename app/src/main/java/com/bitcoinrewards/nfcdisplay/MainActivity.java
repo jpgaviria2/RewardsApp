@@ -264,6 +264,7 @@ public class MainActivity extends Activity {
         if (SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(authMethod)) {
             String displayUrl = SettingsActivity.getDisplayUrl(this);
             if (displayUrl != null) {
+                applySavedSessionCookies(prefs, btcpayUrl);
                 webView.loadUrl(displayUrl);
             }
             return;
@@ -276,6 +277,23 @@ public class MainActivity extends Activity {
         }
 
         new LoginTask().execute(btcpayUrl, email, password, apiKey);
+    }
+
+    private void applySavedSessionCookies(SharedPreferences prefs, String btcpayUrl) {
+        String cookieHeader = prefs.getString(SettingsActivity.KEY_SESSION_COOKIES, "");
+        if (btcpayUrl == null || btcpayUrl.isEmpty() || cookieHeader == null || cookieHeader.trim().isEmpty()) {
+            return;
+        }
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        String[] cookies = cookieHeader.split(";");
+        for (String cookie : cookies) {
+            String trimmed = cookie.trim();
+            if (!trimmed.isEmpty() && trimmed.contains("=")) {
+                cookieManager.setCookie(btcpayUrl, trimmed);
+            }
+        }
+        cookieManager.flush();
     }
 
     private class LoginTask extends AsyncTask<String, Void, Boolean> {
