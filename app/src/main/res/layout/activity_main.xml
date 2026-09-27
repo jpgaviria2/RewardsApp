@@ -44,7 +44,8 @@
         android:textAllCaps="false"
         android:textStyle="bold"
         android:backgroundTint="#2E7D32"
-        android:textColor="#FFFFFF" />
+        android:textColor="#FFFFFF"
+        android:visibility="gone" />
 
     <!-- NFC tap feedback overlay -->
     <TextView

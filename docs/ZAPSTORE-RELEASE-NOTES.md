@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.3
+# Rewards NFC Display v2.9.4
 
 Clean standalone RewardsApp production release.
 
@@ -19,3 +19,5 @@ Clean standalone RewardsApp production release.
 - Uses the BTCPay 2.4-compatible `/login?loginCode=...` endpoint for login-code exchange.
 
 - Scan BTCPay Login QR now logs in immediately after scanning, matching BTCPay login-code behavior.
+
+- Hide the Scan Rewards Profile overlay on BTCPay login/account pages; only show it on Bitcoin Rewards display/check-in pages.

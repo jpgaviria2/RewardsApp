@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     private WebView webView;
     private TextView nfcTapOverlay;
     private TextView loadingText;
+    private Button btnScanRewardsProfile;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String currentLnurl = null;
     private boolean nfcEnabled = true;
@@ -105,8 +106,9 @@ public class MainActivity extends Activity {
             });
         }
 
-        Button btnScanRewardsProfile = findViewById(R.id.btn_scan_rewards_profile);
+        btnScanRewardsProfile = findViewById(R.id.btn_scan_rewards_profile);
         if (btnScanRewardsProfile != null) {
+            btnScanRewardsProfile.setVisibility(View.GONE);
             btnScanRewardsProfile.setOnClickListener(v -> {
                 startActivity(new Intent(this, RewardsProfileScanActivity.class));
             });
@@ -138,9 +140,12 @@ public class MainActivity extends Activity {
                 // The background login already tried — don't fight the WebView
                 if (url.contains("/login") || url.contains("/Account/Login")) {
                     Log.i(TAG, "Login page shown in WebView — user can log in manually");
+                    updateRewardsProfileScanVisibility(url);
                     // Don't interfere — let the user type
                     return;
                 }
+
+                updateRewardsProfileScanVisibility(url);
 
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
@@ -176,6 +181,21 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "HCE not supported on this device");
             }
         }
+    }
+
+    private void updateRewardsProfileScanVisibility(String url) {
+        if (btnScanRewardsProfile == null) {
+            return;
+        }
+        String safeUrl = url == null ? "" : url.toLowerCase();
+        boolean isLoginOrAccountPage = safeUrl.contains("/login")
+            || safeUrl.contains("/account/")
+            || safeUrl.contains("signin")
+            || safeUrl.contains("login");
+        boolean isRewardsDisplayPage = safeUrl.contains("/plugins/bitcoin-rewards/")
+            && (safeUrl.contains("/display") || safeUrl.contains("/check-in"));
+
+        btnScanRewardsProfile.setVisibility(!isLoginOrAccountPage && isRewardsDisplayPage ? View.VISIBLE : View.GONE);
     }
 
     @Override
