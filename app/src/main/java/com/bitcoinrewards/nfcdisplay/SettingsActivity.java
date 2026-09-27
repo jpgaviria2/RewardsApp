@@ -367,7 +367,7 @@ public class SettingsActivity extends Activity {
                 String returnUrl = storeId == null || storeId.isEmpty()
                     ? "/stores"
                     : "/plugins/bitcoin-rewards/" + URLEncoder.encode(storeId, "UTF-8") + "/display";
-                URL codeUrl = new URL(serverUrl + "/login/code?loginCode=" + URLEncoder.encode(loginCode, "UTF-8") + "&returnUrl=" + URLEncoder.encode(returnUrl, "UTF-8"));
+                URL codeUrl = new URL(serverUrl + "/login?loginCode=" + URLEncoder.encode(loginCode, "UTF-8") + "&returnUrl=" + URLEncoder.encode(returnUrl, "UTF-8"));
                 HttpURLConnection conn = (HttpURLConnection) codeUrl.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setInstanceFollowRedirects(false);
