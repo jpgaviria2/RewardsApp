@@ -1,5 +1,5 @@
 repository: https://github.com/jpgaviria2/RewardsApp
-release_source: https://github.com/jpgaviria2/RewardsApp/releases/download/v2.11.0/rewards-nfc-display-2.11.0-production.apk
+release_source: https://github.com/jpgaviria2/RewardsApp/releases/download/v2.11.1/rewards-nfc-display-2.11.1-production.apk
 match: "rewards-nfc-display-.*\\.apk$"
 pubkey: npub13xxh7qmxlean3xspxyjryl3y8ppsl300f998mq2qvc7vmzwatvfqt9s4p0
 name: Rewards NFC Display

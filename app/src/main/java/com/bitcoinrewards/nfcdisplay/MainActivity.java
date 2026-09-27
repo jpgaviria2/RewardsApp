@@ -153,6 +153,7 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
         // Enable cookies in WebView
         CookieManager cookieManager = CookieManager.getInstance();
@@ -347,8 +348,10 @@ public class MainActivity extends Activity {
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         rewardsScannerPanel.setVisibility(View.VISIBLE);
         LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
-        params.weight = rewardVisible ? 0.55f : 1.05f;
+        params.weight = 0f;
+        params.height = dp(rewardVisible ? 210 : 240);
         rewardsScannerPanel.setLayoutParams(params);
+        inlineRewardsScanner.setStatusText("");
         setRewardsScannerStatus(rewardVisible
             ? "Reward QR is available below — scanner stays ready for the next customer"
             : "Front camera ready — show your wallet Lightning address QR");
@@ -441,6 +444,10 @@ public class MainActivity extends Activity {
 
     private void setRewardsScannerStatus(String text) {
         if (rewardsScannerStatus != null) rewardsScannerStatus.setText(text);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void vibrate(int ms) {

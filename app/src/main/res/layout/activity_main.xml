@@ -18,8 +18,7 @@
         <LinearLayout
             android:id="@+id/rewards_scanner_panel"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="240dp"
             android:orientation="vertical"
             android:background="#101820"
             android:visibility="gone">
@@ -31,8 +30,8 @@
                 android:gravity="center_vertical"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
                 android:background="#CC101820">
 
                 <TextView
@@ -43,12 +42,13 @@
                     android:text="Front camera ready — show your wallet Lightning address QR"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"
-                    android:textSize="15sp" />
+                    android:textSize="14sp"
+                    android:maxLines="2" />
 
                 <Button
                     android:id="@+id/btn_flip_inline_camera"
                     android:layout_width="wrap_content"
-                    android:layout_height="42dp"
+                    android:layout_height="38dp"
                     android:text="Flip"
                     android:textAllCaps="false" />
             </LinearLayout>
