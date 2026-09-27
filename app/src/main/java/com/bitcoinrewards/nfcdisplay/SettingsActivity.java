@@ -128,7 +128,7 @@ public class SettingsActivity extends Activity {
         }
         Button btnScanLoginCode = findViewById(R.id.btn_scan_login_code);
         if (btnScanLoginCode != null) {
-            btnScanLoginCode.setOnClickListener(v -> startActivityForResult(new Intent(this, LoginCodeScanActivity.class), LOGIN_CODE_SCAN_REQUEST));
+            btnScanLoginCode.setOnClickListener(v -> saveAndLaunchWebLogin());
         }
         btnSave.setOnClickListener(v -> saveAndLaunch());
         if (btnCycleStore != null) {
@@ -644,6 +644,35 @@ public class SettingsActivity extends Activity {
         } catch (Exception e) {
             Log.e(TAG, "Error cycling store", e);
         }
+    }
+
+    private void saveAndLaunchWebLogin() {
+        String url = normalizeUrl(inputUrl.getText().toString());
+        String storeId = inputStoreId.getText().toString().trim();
+        if (url.isEmpty()) {
+            inputUrl.setError("Required");
+            return;
+        }
+        if (looksLikeStoreId(url)) {
+            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
+            if (storeId.isEmpty()) inputStoreId.setText(url);
+            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
+            statusText.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (storeId.isEmpty()) {
+            inputStoreId.setError("Required for BTCPay web login");
+            statusText.setText("❌ Enter Store ID once so BTCPay can return to the rewards display after login.");
+            statusText.setVisibility(View.VISIBLE);
+            return;
+        }
+        selectedStoreId = storeId;
+        selectedStoreName = storeId;
+        apiKey = null;
+        loginCodeSessionCookies = "";
+        statusText.setText("🔄 Opening BTCPay login scanner...");
+        statusText.setVisibility(View.VISIBLE);
+        saveAndLaunch();
     }
 
     private void saveAndLaunch() {

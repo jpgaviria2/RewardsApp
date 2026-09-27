@@ -117,7 +117,7 @@
             android:id="@+id/btn_scan_login_code"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Scan BTCPay Login QR &amp; Login"
+            android:text="Open BTCPay Login Scanner"
             android:textSize="16sp"
             android:textStyle="bold"
             android:textColor="#ffffff"

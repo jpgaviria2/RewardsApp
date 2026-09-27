@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.8
+# Rewards NFC Display v2.9.9
 
 Clean standalone RewardsApp production release.
 
@@ -35,3 +35,9 @@ Clean standalone RewardsApp production release.
 - Treat HTTP 200 from BTCPay login-code exchange as not authenticated instead of saving a partial login-page cookie; only redirect responses with session cookies are accepted.
 
 - Add login-flow diagnostics for session cookie replay and BTCPay login redirects.
+
+- Switch setup to BTCPay Server’s own web login-code scanner inside the WebView, with camera permission enabled.
+
+- Open BTCPay login with a rewards-display return URL so successful web login returns to the kiosk display.
+
+- Keep customer profile scan overlays hidden on BTCPay login pages while allowing the BTCPay web scanner to use camera access.

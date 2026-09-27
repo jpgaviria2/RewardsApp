@@ -1,9 +1,11 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
@@ -22,6 +24,8 @@ import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.PermissionRequest;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -69,6 +73,8 @@ public class MainActivity extends Activity {
     private boolean loginAttempted = false;
     private NfcAdapter nfcAdapter;
 
+    private static final int CAMERA_PERMISSION_REQUEST = 5501;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -98,6 +104,11 @@ public class MainActivity extends Activity {
         loadingText = findViewById(R.id.loading_text);
         webView = findViewById(R.id.webview);
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
+            && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST);
+        }
+
         // Settings gear button
         ImageButton btnSettings = findViewById(R.id.btn_settings);
         if (btnSettings != null) {
@@ -124,6 +135,25 @@ public class MainActivity extends Activity {
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
 
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> {
+                    java.util.ArrayList<String> allowed = new java.util.ArrayList<>();
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                            allowed.add(resource);
+                        }
+                    }
+                    if (allowed.isEmpty()) {
+                        request.deny();
+                    } else {
+                        request.grant(allowed.toArray(new String[0]));
+                    }
+                });
+            }
+        });
+
         // Add JS bridge
         webView.addJavascriptInterface(new AndroidBridge(this), "AndroidBridge");
 
@@ -136,18 +166,12 @@ public class MainActivity extends Activity {
                 }
                 webView.setVisibility(View.VISIBLE);
 
-                // If we hit the login page, just let the user log in manually
-                // The background login already tried — don't fight the WebView
                 if (url.contains("/login") || url.contains("/Account/Login")) {
-                    Log.i(TAG, "Login page shown in WebView — user can log in manually");
+                    Log.i(TAG, "Login page shown in WebView");
                     updateRewardsProfileScanVisibility(url);
                     if (isLoginCodeAuth()) {
-                        Log.w(TAG, "Login-code WebView was redirected to BTCPay login page: " + url);
-                        Toast.makeText(MainActivity.this, "BTCPay session expired. Scan the login QR in app settings.", Toast.LENGTH_LONG).show();
-                        startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                        finish();
+                        Log.i(TAG, "Allowing BTCPay web login-code flow with WebView camera access: " + url);
                     }
-                    // Don't interfere — let the user type
                     return;
                 }
 
@@ -270,13 +294,10 @@ public class MainActivity extends Activity {
         if (SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(authMethod)) {
             String displayUrl = SettingsActivity.getDisplayUrl(this);
             if (displayUrl != null) {
-                if (!applySavedSessionCookies(prefs, btcpayUrl)) {
-                    Toast.makeText(this, "Scan the BTCPay login QR to start.", Toast.LENGTH_LONG).show();
-                    startActivity(new Intent(this, SettingsActivity.class));
-                    finish();
-                    return;
-                }
-                webView.loadUrl(displayUrl);
+                boolean hasCookies = applySavedSessionCookies(prefs, btcpayUrl);
+                String urlToLoad = hasCookies ? displayUrl : getBtcpayLoginUrl(btcpayUrl, displayUrl);
+                Log.i(TAG, "Loading " + (hasCookies ? "display with saved cookies" : "BTCPay web login-code flow") + ": " + urlToLoad);
+                webView.loadUrl(urlToLoad);
             }
             return;
         }
@@ -295,6 +316,14 @@ public class MainActivity extends Activity {
         return SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(
             prefs.getString(SettingsActivity.KEY_AUTH_METHOD, SettingsActivity.AUTH_METHOD_PASSWORD)
         );
+    }
+
+    private String getBtcpayLoginUrl(String btcpayUrl, String displayUrl) {
+        try {
+            return btcpayUrl + "/login?returnUrl=" + java.net.URLEncoder.encode(displayUrl, "UTF-8");
+        } catch (Exception e) {
+            return btcpayUrl + "/login";
+        }
     }
 
     private boolean applySavedSessionCookies(SharedPreferences prefs, String btcpayUrl) {
