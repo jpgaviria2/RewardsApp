@@ -4,12 +4,7 @@
 
 Please do not report security vulnerabilities through public GitHub issues.
 
-Use one of these private channels instead:
-
-- GitHub private vulnerability reporting, if enabled for this repository
-- Email: jp@trailscoffee.com
-
-Include a short description, impact, affected version or commit, reproduction steps, and whether you believe funds, credentials, private keys, customer data, or production infrastructure are at risk.
+Use GitHub private vulnerability reporting if enabled for this repository. Include a short description, impact, affected version or commit, reproduction steps, and whether you believe funds, credentials, private keys, customer data, or production infrastructure are at risk.
 
 ## Scope
 

@@ -4,9 +4,14 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.nfc.NdefMessage;
+import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.NfcManager;
+import android.nfc.Tag;
 import android.nfc.cardemulation.CardEmulation;
+import android.nfc.tech.IsoDep;
+import android.nfc.tech.Ndef;
 import android.content.ComponentName;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -20,8 +25,10 @@ import android.webkit.CookieManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService;
 
@@ -31,13 +38,15 @@ import java.io.OutputStream;
 import java.net.HttpCookie;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Main activity: fullscreen WebView loading the BTCPay rewards display page,
  * with HCE NFC integration via JavaScript bridge.
- *
+ * 
  * Auth flow:
  * 1. POST to /api/v1/api-keys with Basic auth to get API key (done in settings)
  * 2. On launch, POST login form to get session cookie
@@ -47,6 +56,8 @@ import java.util.Map;
  */
 public class MainActivity extends Activity {
     private static final String TAG = "RewardsNFC";
+    // Wallet ID pattern: 8+ char hex or UUID-style
+    private static final Pattern WALLET_ID_PATTERN = Pattern.compile("^[a-fA-F0-9\\-]{8,}$");
 
     private WebView webView;
     private TextView nfcTapOverlay;
@@ -55,6 +66,7 @@ public class MainActivity extends Activity {
     private String currentLnurl = null;
     private boolean nfcEnabled = true;
     private boolean loginAttempted = false;
+    private NfcAdapter nfcAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,6 +105,13 @@ public class MainActivity extends Activity {
             });
         }
 
+        Button btnScanRewardsProfile = findViewById(R.id.btn_scan_rewards_profile);
+        if (btnScanRewardsProfile != null) {
+            btnScanRewardsProfile.setOnClickListener(v -> {
+                startActivity(new Intent(this, RewardsProfileScanActivity.class));
+            });
+        }
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -123,9 +142,6 @@ public class MainActivity extends Activity {
                     return;
                 }
 
-                // Inject Trails Coffee branding CSS overrides
-                injectBrandingOverrides(view);
-
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
                     injectNfcBanner(view);
@@ -137,7 +153,7 @@ public class MainActivity extends Activity {
         webView.setVisibility(View.INVISIBLE);
         if (loadingText != null) {
             loadingText.setVisibility(View.VISIBLE);
-            loadingText.setText("☕ Connecting to Trails Coffee Rewards...");
+            loadingText.setText("⚡ Connecting to BTCPay Server...");
         }
 
         // First, try to establish a session cookie via login
@@ -165,35 +181,43 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Set this app's HCE service as the preferred one (like Numo does)
         if (nfcEnabled) {
+            // Set this app's HCE service as the preferred one
             try {
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+                nfcAdapter = NfcAdapter.getDefaultAdapter(this);
                 if (nfcAdapter != null) {
                     CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
                     ComponentName hceComponent = new ComponentName(this, NdefHostCardEmulationService.class);
                     cardEmulation.setPreferredService(this, hceComponent);
                     Log.i(TAG, "Set preferred HCE service");
+
+                    // Enable NFC reader mode to read incoming taps (iOS Wallet passes)
+                    nfcAdapter.enableReaderMode(
+                        this,
+                        tag -> handleNfcTag(tag),
+                        NfcAdapter.FLAG_READER_NFC_A
+                            | NfcAdapter.FLAG_READER_NFC_B
+                            | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK,
+                        null
+                    );
+                    Log.i(TAG, "NFC reader mode enabled");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Failed to set preferred HCE service: " + e.getMessage());
+                Log.e(TAG, "Failed to set up NFC: " + e.getMessage());
             }
         }
     }
 
     @Override
     protected void onPause() {
-        // Unset preferred service when app goes to background
-        if (nfcEnabled) {
+        if (nfcEnabled && nfcAdapter != null) {
             try {
-                NfcAdapter nfcAdapter = NfcAdapter.getDefaultAdapter(this);
-                if (nfcAdapter != null) {
-                    CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
-                    cardEmulation.unsetPreferredService(this);
-                    Log.i(TAG, "Unset preferred HCE service");
-                }
+                CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
+                cardEmulation.unsetPreferredService(this);
+                nfcAdapter.disableReaderMode(this);
+                Log.i(TAG, "NFC reader mode disabled, unset preferred HCE service");
             } catch (Exception e) {
-                Log.e(TAG, "Failed to unset preferred HCE service: " + e.getMessage());
+                Log.e(TAG, "Failed to clean up NFC: " + e.getMessage());
             }
         }
         super.onPause();
@@ -201,7 +225,7 @@ public class MainActivity extends Activity {
 
     /**
      * Perform login in background to get session cookie, then load display page.
-     *
+     * 
      * BTCPay login flow:
      * 1. GET /login — get the anti-forgery token from the form
      * 2. POST /login — submit email + password + token
@@ -215,6 +239,15 @@ public class MainActivity extends Activity {
         String email = prefs.getString(SettingsActivity.KEY_EMAIL, "");
         String password = prefs.getString(SettingsActivity.KEY_PASSWORD, "");
         String apiKey = prefs.getString(SettingsActivity.KEY_API_KEY, "");
+
+        String authMethod = prefs.getString(SettingsActivity.KEY_AUTH_METHOD, SettingsActivity.AUTH_METHOD_PASSWORD);
+        if (SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(authMethod)) {
+            String displayUrl = SettingsActivity.getDisplayUrl(this);
+            if (displayUrl != null) {
+                webView.loadUrl(displayUrl);
+            }
+            return;
+        }
 
         if (btcpayUrl.isEmpty() || email.isEmpty()) {
             startActivity(new Intent(this, SettingsActivity.class));
@@ -353,239 +386,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * Inject Trails Coffee branding via CSS overrides + full DOM manipulation.
-     * Replaces default purple theme with brown gradient, adds logo, cleans up text.
-     */
-    private void injectBrandingOverrides(WebView view) {
-        String css =
-            "body { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
-            ".header h1 { color: #FFFEF7 !important; }" +
-            ".header p { color: rgba(255,255,255,0.9) !important; }" +
-            ".status-bar { background: rgba(255,255,255,0.2) !important; }" +
-            ".reward-display { background: #FFFEF7 !important; }" +
-            ".reward-display.waiting { background: transparent !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; border-radius: 0 !important; border: none !important; }" +
-            ".waiting-message { color: #6B4423 !important; }" +
-            ".waiting-icon { font-size: 4rem; }" +
-            ".amount { color: #28a745 !important; }" +
-            "h2[style*='color'] { color: #6B4423 !important; }" +
-            ".countdown-timer { color: #6B4423 !important; }" +
-            ".countdown-timer.warning { color: #CD853F !important; }" +
-            ".refresh-button { color: #6B4423 !important; }" +
-            ".refresh-button:hover { background: #6B4423 !important; color: white !important; }" +
-            ".done-button { background: linear-gradient(135deg, #6B4423, #CD853F) !important; border-color: #6B4423 !important; }" +
-            "#nfc-tap-btn { background: linear-gradient(135deg, #6B4423 0%, #CD853F 100%) !important; }" +
-            "a[style*='color: white'] { color: rgba(255,255,255,0.8) !important; }";
-
-        String js = "(function() {" +
-            // Guard: only inject once
-            "if (document.getElementById('trails-injected')) return;" +
-            "var marker = document.createElement('meta');" +
-            "marker.id = 'trails-injected';" +
-            "document.head.appendChild(marker);" +
-
-            // CSS overrides
-            "var style = document.createElement('style');" +
-            "style.id = 'trails-branding';" +
-            "style.textContent = " + escapeForJs(css) + ";" +
-            "document.head.appendChild(style);" +
-
-            // 1. Add Trails logo wrapped in cream pill background
-            "var container = document.querySelector('.container');" +
-            "if (container && !document.getElementById('trails-logo-wrap')) {" +
-            "  var wrap = document.createElement('div');" +
-            "  wrap.id = 'trails-logo-wrap';" +
-            "  wrap.style.cssText = 'background:#FFFEF7;border-radius:20px;padding:16px 24px;margin-bottom:20px;display:inline-block;box-shadow:0 4px 15px rgba(0,0,0,0.2);';" +
-            "  var logo = document.createElement('img');" +
-            "  logo.src = 'https://trailscoffee.com/LOGO-BROWN.png';" +
-            "  logo.alt = 'Trails Coffee';" +
-            "  logo.style.cssText = 'width:160px;max-width:55%;display:block;';" +
-            "  wrap.appendChild(logo);" +
-            "  container.insertBefore(wrap, container.firstChild);" +
-            "}" +
-
-            // Hide waiting screen text content
-            "var waitingIcon = document.querySelector('.waiting-icon');" +
-            "if (waitingIcon) waitingIcon.style.display = 'none';" +
-            "var waitingMsg = document.querySelector('.waiting-message');" +
-            "if (waitingMsg) waitingMsg.style.display = 'none';" +
-            "var waitingDisplay = document.querySelector('.reward-display.waiting');" +
-            "if (waitingDisplay) {" +
-            "  waitingDisplay.querySelectorAll('p').forEach(function(p) {" +
-            "    p.style.display = 'none';" +
-            "  });" +
-            "}" +
-
-            // Make waiting card fully transparent
-            "if (waitingDisplay) {" +
-            "  waitingDisplay.style.background = 'transparent';" +
-            "  waitingDisplay.style.boxShadow = 'none';" +
-            "  waitingDisplay.style.padding = '0';" +
-            "  waitingDisplay.style.margin = '0';" +
-            "  waitingDisplay.style.borderRadius = '0';" +
-            "  waitingDisplay.style.border = 'none';" +
-            "}" +
-
-            // Make container full-width with no padding
-            "var container2 = document.querySelector('.container');" +
-            "if (container2) {" +
-            "  container2.style.padding = '0';" +
-            "  container2.style.width = '100%';" +
-            "  container2.style.maxWidth = '100%';" +
-            "}" +
-
-            // Tighten logo wrap margins
-            "var logoWrap2 = document.getElementById('trails-logo-wrap');" +
-            "if (logoWrap2) {" +
-            "  logoWrap2.style.marginBottom = '12px';" +
-            "  logoWrap2.style.marginTop = '16px';" +
-            "}" +
-
-            // Add full-width promo image on waiting screen
-            "if (waitingDisplay && !document.getElementById('app-promo-img')) {" +
-            "  waitingDisplay.style.overflow = 'hidden';" +
-            "  var promoImg = document.createElement('img');" +
-            "  promoImg.id = 'app-promo-img';" +
-            "  promoImg.src = 'https://staff.trailscoffee.com/app-promo.jpg';" +
-            "  promoImg.alt = 'Download Trails Coffee App';" +
-            "  promoImg.style.cssText = 'width:100%;max-width:100%;height:auto;display:block;border-radius:16px;margin:0;';" +
-            "  waitingDisplay.appendChild(promoImg);" +
-            "}" +
-
-            // Hide status bar
-            "var statusBar = document.querySelector('.status-bar');" +
-            "if (statusBar) statusBar.style.display = 'none';" +
-
-            // Hide refresh button
-            "document.querySelectorAll('.refresh-button').forEach(function(btn) {" +
-            "  btn.style.display = 'none';" +
-            "});" +
-
-            // Hide footer
-            "var footer = document.querySelector('.footer');" +
-            "if (footer) footer.style.display = 'none';" +
-
-            // 2. Replace text content
-            "document.querySelectorAll('h1, h2, h3, p, div, span, button').forEach(function(el) {" +
-            "  if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {" +
-            "    el.textContent = el.textContent" +
-            "      .replace(/Bitcoin Rewards Display/g, 'Trails Coffee Rewards')" +
-            "      .replace(/Bitcoin Rewards/g, 'Coffee Rewards')" +
-            "      .replace(/Bitcoin-backed rewards/gi, 'Coffee rewards')" +
-            "      .replace(/\\u23F3/g, '\\u2615')" +
-            "      .replace(/Waiting for rewards\\.\\.\\./g, 'Waiting for next customer...')" +
-            "      .replace(/The latest unclaimed reward will appear here automatically/g, 'Rewards appear here automatically after payment')" +
-            "      .replace(/Page refreshes automatically every/g, 'Updates every')" +
-            "      .replace(/Back to Settings/g, '');" +
-            "  }" +
-            "});" +
-
-            // 3. Update page title
-            "document.title = 'Trails Coffee Rewards';" +
-
-            // 4. Remove Back to Settings links
-            "var links = document.querySelectorAll('a');" +
-            "links.forEach(function(a) {" +
-            "  if (a.textContent.includes('Settings') || a.textContent.includes('Back to')) {" +
-            "    a.parentElement.style.display = 'none';" +
-            "  }" +
-            "});" +
-
-            // 5. Fix header h1 and subtitle
-            "var h1 = document.querySelector('.header h1');" +
-            "if (h1) h1.textContent = '\\u2615 Trails Coffee Rewards';" +
-            "var headerP = document.querySelector('.header p');" +
-            "if (headerP) headerP.textContent = 'Anmore, BC';" +
-
-            // 6. Waiting message and icon are now hidden (see above)
-
-            // 7. Remove NFC banner and related sections
-            "var nfcBanner = document.getElementById('nfc-tap-banner');" +
-            "if (nfcBanner) nfcBanner.remove();" +
-            "var nfcSection = document.getElementById('nfc-section');" +
-            "if (nfcSection) nfcSection.style.display = 'none';" +
-            "var nfcIndicator = document.getElementById('nfc-hce-indicator');" +
-            "if (nfcIndicator) nfcIndicator.style.display = 'none';" +
-
-            // 8. MutationObserver to keep NFC banner removed (it gets injected after branding)
-            "var observer = new MutationObserver(function() {" +
-            "  var b = document.getElementById('nfc-tap-banner');" +
-            "  if (b) b.remove();" +
-            "  var s = document.getElementById('nfc-section');" +
-            "  if (s) s.style.display = 'none';" +
-            "});" +
-            "observer.observe(document.body, {childList: true, subtree: true});" +
-
-            // 9. Add iOS App Store section below QR code
-            "var qrDiv = document.querySelector('.qr-code');" +
-            "if (qrDiv && !document.getElementById('ios-download-section')) {" +
-            "  var iosSection = document.createElement('div');" +
-            "  iosSection.id = 'ios-download-section';" +
-            "  iosSection.style.cssText = 'background:linear-gradient(135deg,#6B4423,#8B4513);color:white;padding:16px 20px;border-radius:12px;margin:16px 0;text-align:center;';" +
-            "  iosSection.innerHTML = '<div style=\"font-size:15px;font-weight:700;margin-bottom:6px;\">\\uD83D\\uDCF1 Claim on the Trails Coffee App</div>' +" +
-            "    '<div style=\"font-size:13px;opacity:0.9;margin-bottom:12px;\">Download from the App Store to collect & redeem your sats</div>' +" +
-            "    '<a href=\"https://apps.apple.com/app/id6741817829\" style=\"background:white;color:#6B4423;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:700;text-decoration:none;display:inline-block;\">\\u2B07\\uFE0F Download on App Store</a>';" +
-            "  qrDiv.parentNode.insertBefore(iosSection, qrDiv.nextSibling);" +
-            "}" +
-
-            // Hide header text on waiting screen only
-            "if (document.querySelector('.reward-display.waiting')) {" +
-            "  var headerH1 = document.querySelector('.header h1');" +
-            "  if (headerH1) headerH1.style.display = 'none';" +
-            "  var headerP = document.querySelector('.header p');" +
-            "  if (headerP) headerP.style.display = 'none';" +
-            "}" +
-
-            // Shrink the logo wrap
-            "var logoWrap = document.getElementById('trails-logo-wrap');" +
-            "if (logoWrap) {" +
-            "  logoWrap.style.padding = '10px 16px';" +
-            "  logoWrap.style.marginBottom = '8px';" +
-            "  logoWrap.style.marginTop = '8px';" +
-            "}" +
-            "var logoImg = logoWrap ? logoWrap.querySelector('img') : null;" +
-            "if (logoImg) {" +
-            "  logoImg.style.width = '100px';" +
-            "}" +
-
-            // Make promo image fill remaining viewport height
-            "var promoImg = document.getElementById('app-promo-img');" +
-            "if (promoImg) {" +
-            "  promoImg.style.width = '100%';" +
-            "  promoImg.style.maxWidth = '100%';" +
-            "  promoImg.style.maxHeight = '75vh';" +
-            "  promoImg.style.objectFit = 'cover';" +
-            "  promoImg.style.objectPosition = 'top';" +
-            "  promoImg.style.borderRadius = '16px';" +
-            "  promoImg.style.display = 'block';" +
-            "}" +
-
-            // Make body not scroll on waiting screen
-            "if (document.querySelector('.reward-display.waiting')) {" +
-            "  document.body.style.overflow = 'hidden';" +
-            "  document.body.style.height = '100vh';" +
-            "}" +
-
-            // Make container use flexbox to fill height properly
-            "var container = document.querySelector('.container');" +
-            "if (container && document.querySelector('.reward-display.waiting')) {" +
-            "  container.style.display = 'flex';" +
-            "  container.style.flexDirection = 'column';" +
-            "  container.style.alignItems = 'center';" +
-            "  container.style.minHeight = '100vh';" +
-            "  container.style.justifyContent = 'flex-start';" +
-            "  container.style.paddingTop = '0';" +
-            "}" +
-
-            "})()";
-
-        view.evaluateJavascript(js, null);
-    }
-
-    private String escapeForJs(String s) {
-        return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
-    }
-
     private void extractLnurlFromPage(WebView view) {
         view.evaluateJavascript(
             "(function() {" +
@@ -618,9 +418,9 @@ public class MainActivity extends Activity {
             "var banner = document.createElement('div');" +
             "banner.id = 'nfc-tap-banner';" +
             "banner.innerHTML = '📱 TAP YOUR PHONE HERE TO CLAIM';" +
-            "banner.style.cssText = 'background:linear-gradient(135deg,#6B4423,#CD853F);color:white;font-size:22px;font-weight:bold;padding:20px;margin:15px auto;border-radius:16px;text-align:center;max-width:400px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 4px 20px rgba(107,68,35,0.5);';" +
+            "banner.style.cssText = 'background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:22px;font-weight:bold;padding:20px;margin:15px auto;border-radius:16px;text-align:center;max-width:400px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 4px 20px rgba(102,126,234,0.5);';" +
             "var style = document.createElement('style');" +
-            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(107,68,35,0.5)} 50%{transform:scale(1.03);box-shadow:0 6px 30px rgba(107,68,35,0.8)} }';" +
+            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(102,126,234,0.5)} 50%{transform:scale(1.03);box-shadow:0 6px 30px rgba(102,126,234,0.8)} }';" +
             "document.head.appendChild(style);" +
             "var parent = qr.parentElement || qr.parentNode;" +
             "if (parent) { parent.insertBefore(banner, qr.nextSibling); }" +
@@ -636,9 +436,9 @@ public class MainActivity extends Activity {
         // Use static method — works even before service is created by Android
         String fullUri = "lightning:" + lnurl;
         NdefHostCardEmulationService.setPayload(fullUri);
-        Log.i(TAG, "NFC payload set (" + fullUri.length() + " chars): " + fullUri.substring(0, Math.min(50, fullUri.length())) + "...");
-        Log.i(TAG, "HCE hasPayload: " + NdefHostCardEmulationService.hasPayload());
-        Log.i(TAG, "HCE instance: " + (NdefHostCardEmulationService.getInstance() != null ? "running" : "waiting for tap"));
+        Log.i(TAG, "✅ NFC payload set (" + fullUri.length() + " chars): " + fullUri.substring(0, Math.min(50, fullUri.length())) + "...");
+        Log.i(TAG, "✅ HCE hasPayload: " + NdefHostCardEmulationService.hasPayload());
+        Log.i(TAG, "✅ HCE instance: " + (NdefHostCardEmulationService.getInstance() != null ? "running" : "waiting for tap"));
 
         webView.evaluateJavascript(
             "var ind = document.getElementById('nfc-hce-indicator');" +
@@ -664,6 +464,181 @@ public class MainActivity extends Activity {
 
             handler.postDelayed(() -> nfcTapOverlay.setVisibility(View.GONE), 1500);
         });
+    }
+
+    // ==================== NFC Reader Mode (reads iOS Wallet passes) ====================
+
+    private void handleNfcTag(Tag tag) {
+        Log.i(TAG, "NFC tag detected: " + tag.toString());
+
+        // Try NDEF first (standard NFC tags + Apple Pass)
+        try {
+            Ndef ndef = Ndef.get(tag);
+            if (ndef != null) {
+                ndef.connect();
+                NdefMessage message = ndef.getNdefMessage();
+                if (message != null) {
+                    for (NdefRecord record : message.getRecords()) {
+                        byte[] payload = record.getPayload();
+                        if (payload == null || payload.length == 0) continue;
+
+                        // NDEF text records have a 1-byte status + language code prefix
+                        String text;
+                        if (record.getTnf() == NdefRecord.TNF_WELL_KNOWN
+                                && java.util.Arrays.equals(record.getType(), NdefRecord.RTD_TEXT)) {
+                            int langLen = payload[0] & 0x3F;
+                            text = new String(payload, 1 + langLen, payload.length - 1 - langLen, StandardCharsets.UTF_8);
+                        } else {
+                            text = new String(payload, StandardCharsets.UTF_8);
+                        }
+
+                        text = text.trim();
+                        Log.i(TAG, "NDEF record payload: " + text);
+
+                        if (isValidWalletId(text)) {
+                            ndef.close();
+                            onWalletIdRead(text);
+                            return;
+                        }
+                    }
+                }
+                ndef.close();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error reading NDEF: " + e.getMessage());
+        }
+
+        // Fallback: ISO-DEP for Apple Wallet passes (Value Added Services)
+        try {
+            IsoDep isoDep = IsoDep.get(tag);
+            if (isoDep != null) {
+                isoDep.connect();
+                isoDep.setTimeout(2000);
+
+                // Select the Apple VAS applet
+                // Apple VAS AID: 4F53452E5641532E3031 ("OSE.VAS.01")
+                byte[] selectVas = new byte[] {
+                    0x00, (byte) 0xA4, 0x04, 0x00,
+                    0x0A,  // length
+                    0x4F, 0x53, 0x45, 0x2E, 0x56, 0x41, 0x53, 0x2E, 0x30, 0x31,  // OSE.VAS.01
+                    0x00
+                };
+                byte[] response = isoDep.transceive(selectVas);
+                Log.i(TAG, "ISO-DEP VAS select response: " + bytesToHex(response));
+
+                // If VAS select succeeded (SW 9000), try to read pass data
+                if (response.length >= 2
+                        && response[response.length - 2] == (byte) 0x90
+                        && response[response.length - 1] == 0x00) {
+                    // GET DATA command
+                    byte[] getData = new byte[] { 0x00, (byte) 0xCA, 0x01, 0x00, 0x00 };
+                    byte[] dataResp = isoDep.transceive(getData);
+                    Log.i(TAG, "ISO-DEP VAS data response: " + bytesToHex(dataResp));
+
+                    if (dataResp.length > 2) {
+                        String data = new String(dataResp, 0, dataResp.length - 2, StandardCharsets.UTF_8).trim();
+                        if (isValidWalletId(data)) {
+                            isoDep.close();
+                            onWalletIdRead(data);
+                            return;
+                        }
+                    }
+                }
+
+                isoDep.close();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error reading ISO-DEP: " + e.getMessage());
+        }
+
+        // No wallet ID found
+        handler.post(() -> Toast.makeText(this, "NFC tap detected — no wallet ID found", Toast.LENGTH_SHORT).show());
+    }
+
+    private boolean isValidWalletId(String text) {
+        return text != null && !text.isEmpty() && WALLET_ID_PATTERN.matcher(text).matches();
+    }
+
+    private void onWalletIdRead(String walletId) {
+        Log.i(TAG, "✅ Wallet ID read: " + walletId);
+
+        // Visual + haptic feedback
+        handler.post(() -> {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.vibrate(200);
+
+            nfcTapOverlay.setText("☕ Rewards Tap Received!");
+            nfcTapOverlay.setVisibility(View.VISIBLE);
+            handler.postDelayed(() -> {
+                nfcTapOverlay.setVisibility(View.GONE);
+                nfcTapOverlay.setText("⚡ TAP DETECTED!");
+            }, 2500);
+
+            Toast.makeText(this, "Crediting wallet: " + walletId.substring(0, Math.min(8, walletId.length())) + "...", Toast.LENGTH_SHORT).show();
+        });
+
+        // Credit wallet via BTCPay API in background
+        new Thread(() -> creditWallet(walletId)).start();
+    }
+
+    private void creditWallet(String walletId) {
+        try {
+            String url = SettingsActivity.getWalletTapUrl(this, walletId);
+            if (url == null) {
+                throw new IllegalStateException("BTCPay URL and store ID are not configured");
+            }
+            Log.i(TAG, "Crediting wallet via: " + url);
+
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            // Empty JSON body
+            OutputStream os = conn.getOutputStream();
+            os.write("{}".getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            os.close();
+
+            int code = conn.getResponseCode();
+            Log.i(TAG, "BTCPay tap response: " + code);
+
+            BufferedReader reader;
+            if (code >= 200 && code < 300) {
+                reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            } else {
+                reader = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
+            }
+            StringBuilder resp = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) resp.append(line);
+            reader.close();
+
+            Log.i(TAG, "BTCPay tap body: " + resp.toString());
+
+            final boolean success = code >= 200 && code < 300;
+            handler.post(() -> {
+                if (success) {
+                    Toast.makeText(this, "✅ Rewards credited!", Toast.LENGTH_LONG).show();
+                    // Refresh the WebView to show updated rewards
+                    if (webView != null) webView.reload();
+                } else {
+                    Toast.makeText(this, "❌ Failed to credit rewards", Toast.LENGTH_LONG).show();
+                }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error crediting wallet: " + e.getMessage(), e);
+            handler.post(() -> Toast.makeText(this, "❌ Network error crediting rewards", Toast.LENGTH_LONG).show());
+        }
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("%02X", b));
+        return sb.toString();
     }
 
     @Override

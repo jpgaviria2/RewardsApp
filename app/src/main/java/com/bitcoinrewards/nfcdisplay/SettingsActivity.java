@@ -17,8 +17,12 @@ import android.util.Log;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.net.URLDecoder;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.List;
+import java.util.Map;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,6 +44,7 @@ import org.json.JSONObject;
  */
 public class SettingsActivity extends Activity {
     private static final String TAG = "RewardsSettings";
+    private static final int LOGIN_CODE_SCAN_REQUEST = 4401;
     public static final String PREFS_NAME = "RewardsNfcPrefs";
     public static final String KEY_BTCPAY_URL = "btcpay_url";
     public static final String KEY_STORE_ID = "store_id";
@@ -47,11 +52,16 @@ public class SettingsActivity extends Activity {
     public static final String KEY_API_KEY = "api_key";
     public static final String KEY_EMAIL = "email";
     public static final String KEY_PASSWORD = "password";
+    public static final String KEY_AUTH_METHOD = "auth_method";
+    public static final String AUTH_METHOD_PASSWORD = "password";
+    public static final String AUTH_METHOD_LOGIN_CODE = "login_code";
     public static final String KEY_REFRESH_SECONDS = "refresh_seconds";
     public static final String KEY_NFC_ENABLED = "nfc_enabled";
     public static final String KEY_ONBOARDED = "onboarded";
 
     private EditText inputUrl;
+    private EditText inputStoreId;
+    private EditText inputLoginCode;
     private EditText inputEmail;
     private EditText inputPassword;
     private EditText inputRefreshSeconds;
@@ -75,6 +85,8 @@ public class SettingsActivity extends Activity {
         setContentView(R.layout.activity_settings);
 
         inputUrl = findViewById(R.id.input_btcpay_url);
+        inputStoreId = findViewById(R.id.input_store_id);
+        inputLoginCode = findViewById(R.id.input_login_code);
         inputEmail = findViewById(R.id.input_email);
         inputPassword = findViewById(R.id.input_password);
         inputRefreshSeconds = findViewById(R.id.input_refresh_seconds);
@@ -89,6 +101,7 @@ public class SettingsActivity extends Activity {
         // Load existing settings
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         inputUrl.setText(prefs.getString(KEY_BTCPAY_URL, ""));
+        inputStoreId.setText(prefs.getString(KEY_STORE_ID, ""));
         inputEmail.setText(prefs.getString(KEY_EMAIL, ""));
         inputRefreshSeconds.setText(String.valueOf(prefs.getInt(KEY_REFRESH_SECONDS, 10)));
         switchNfc.setChecked(prefs.getBoolean(KEY_NFC_ENABLED, true));
@@ -107,9 +120,26 @@ public class SettingsActivity extends Activity {
         }
 
         btnConnect.setOnClickListener(v -> connectToBtcPay());
+        Button btnLoginCode = findViewById(R.id.btn_login_code);
+        if (btnLoginCode != null) {
+            btnLoginCode.setOnClickListener(v -> loginWithCode());
+        }
+        Button btnScanLoginCode = findViewById(R.id.btn_scan_login_code);
+        if (btnScanLoginCode != null) {
+            btnScanLoginCode.setOnClickListener(v -> startActivityForResult(new Intent(this, LoginCodeScanActivity.class), LOGIN_CODE_SCAN_REQUEST));
+        }
         btnSave.setOnClickListener(v -> saveAndLaunch());
         if (btnCycleStore != null) {
             btnCycleStore.setOnClickListener(v -> cycleStore());
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == LOGIN_CODE_SCAN_REQUEST && resultCode == RESULT_OK && data != null) {
+            String payload = data.getStringExtra(LoginCodeScanActivity.EXTRA_LOGIN_CODE_PAYLOAD);
+            applyLoginCodePayload(payload);
         }
     }
 
@@ -120,6 +150,15 @@ public class SettingsActivity extends Activity {
 
         if (url.isEmpty()) {
             inputUrl.setError("Required");
+            return;
+        }
+        if (looksLikeStoreId(url)) {
+            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
+            if (inputStoreId != null && inputStoreId.getText().toString().trim().isEmpty()) {
+                inputStoreId.setText(url);
+            }
+            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
+            statusText.setVisibility(View.VISIBLE);
             return;
         }
         if (email.isEmpty()) {
@@ -146,6 +185,202 @@ public class SettingsActivity extends Activity {
 
         final String finalUrl = url;
         new ConnectTask().execute(finalUrl, email, password);
+    }
+
+    private void applyLoginCodePayload(String payload) {
+        if (payload == null) return;
+        String raw = payload.trim();
+        if (raw.isEmpty()) return;
+
+        String scannedUrl = extractServerUrl(raw);
+        if (!scannedUrl.isEmpty()) {
+            inputUrl.setText(scannedUrl);
+        }
+
+        String scannedCode = extractLoginCode(raw);
+        inputLoginCode.setText(scannedCode);
+        statusText.setText("✅ Login QR scanned. Tap Login with BTCPay Code.");
+        statusText.setVisibility(View.VISIBLE);
+    }
+
+    private static String extractLoginCode(String raw) {
+        if (raw == null) return "";
+        String value = raw.trim();
+        if (value.isEmpty()) return "";
+
+        try {
+            if (value.startsWith("http://") || value.startsWith("https://")) {
+                URL parsed = new URL(value);
+                String query = parsed.getQuery();
+                if (query != null) {
+                    for (String part : query.split("&")) {
+                        int equals = part.indexOf('=');
+                        String key = equals >= 0 ? part.substring(0, equals) : part;
+                        String val = equals >= 0 ? part.substring(equals + 1) : "";
+                        if ("loginCode".equalsIgnoreCase(URLDecoder.decode(key, "UTF-8"))) {
+                            return URLDecoder.decode(val, "UTF-8").trim();
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) { }
+
+        int semicolon = value.indexOf(';');
+        if (semicolon > 0) {
+            return value.substring(0, semicolon).trim();
+        }
+        return value;
+    }
+
+    private static String extractServerUrl(String raw) {
+        if (raw == null) return "";
+        String value = raw.trim();
+        if (value.isEmpty()) return "";
+
+        try {
+            if (value.startsWith("http://") || value.startsWith("https://")) {
+                URL parsed = new URL(value);
+                return parsed.getProtocol() + "://" + parsed.getHost() + (parsed.getPort() > 0 ? ":" + parsed.getPort() : "");
+            }
+        } catch (Exception ignored) { }
+
+        String[] parts = value.split(";", 3);
+        if (parts.length >= 2 && (parts[1].startsWith("http://") || parts[1].startsWith("https://"))) {
+            return normalizeUrl(parts[1]);
+        }
+        return "";
+    }
+
+    private void loginWithCode() {
+        String url = normalizeUrl(inputUrl.getText().toString().trim());
+        String storeId = inputStoreId.getText().toString().trim();
+        String loginCodePayload = inputLoginCode.getText().toString().trim();
+        String loginCode = extractLoginCode(loginCodePayload);
+
+        if (url.isEmpty()) {
+            inputUrl.setError("Required");
+            return;
+        }
+        if (looksLikeStoreId(url)) {
+            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
+            if (inputStoreId != null && inputStoreId.getText().toString().trim().isEmpty()) {
+                inputStoreId.setText(url);
+            }
+            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
+            statusText.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (storeId.isEmpty()) {
+            inputStoreId.setError("Required for login-code setup");
+            return;
+        }
+        if (loginCode.isEmpty()) {
+            inputLoginCode.setError("Required");
+            return;
+        }
+
+        selectedStoreId = storeId;
+        selectedStoreName = storeId;
+        apiKey = null;
+
+        btnConnect.setEnabled(false);
+        statusText.setText("🔄 Logging in with BTCPay code...");
+        statusText.setVisibility(View.VISIBLE);
+        new LoginCodeTask().execute(url, storeId, loginCode);
+    }
+
+    private static String normalizeUrl(String url) {
+        if (url == null) return "";
+        url = url.trim();
+        if (url.isEmpty()) return "";
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "https://" + url;
+        }
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url;
+    }
+
+    private static boolean looksLikeStoreId(String value) {
+        if (value == null) return false;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) return false;
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return false;
+        if (trimmed.contains(".") || trimmed.contains(":")) return false;
+        return trimmed.length() >= 30 && trimmed.matches("[A-Za-z0-9_-]+");
+    }
+
+    private class LoginCodeTask extends AsyncTask<String, String, String> {
+        private String serverUrl;
+        private String storeId;
+        private String error;
+        private final java.util.ArrayList<String> sessionCookies = new java.util.ArrayList<>();
+
+        @Override
+        protected String doInBackground(String... params) {
+            serverUrl = params[0];
+            storeId = params[1];
+            String loginCode = params[2];
+            try {
+                publishProgress("Exchanging login code...");
+                String returnUrl = "/plugins/bitcoin-rewards/" + URLEncoder.encode(storeId, "UTF-8") + "/display";
+                URL codeUrl = new URL(serverUrl + "/login/code?loginCode=" + URLEncoder.encode(loginCode, "UTF-8") + "&returnUrl=" + URLEncoder.encode(returnUrl, "UTF-8"));
+                HttpURLConnection conn = (HttpURLConnection) codeUrl.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(15000);
+
+                int code = conn.getResponseCode();
+                Map<String, List<String>> headers = conn.getHeaderFields();
+                if (headers != null) {
+                    for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+                        if (entry.getKey() != null && entry.getKey().equalsIgnoreCase("Set-Cookie")) {
+                            sessionCookies.addAll(entry.getValue());
+                        }
+                    }
+                }
+
+                if ((code == 302 || code == 303 || code == 200) && !sessionCookies.isEmpty()) {
+                    return "OK";
+                }
+                error = code == 0 ? "No response from BTCPay" : "Login code failed (HTTP " + code + "). Generate a fresh code and try again.";
+                return null;
+            } catch (javax.net.ssl.SSLHandshakeException e) {
+                error = "HTTPS certificate is not trusted by Android. Use the public BTCPay domain with a trusted certificate.";
+                return null;
+            } catch (Exception e) {
+                error = "Login code failed: " + e.getMessage();
+                Log.e(TAG, "Login code error", e);
+                return null;
+            }
+        }
+
+        @Override
+        protected void onProgressUpdate(String... values) {
+            statusText.setText("🔄 " + values[0]);
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            btnConnect.setEnabled(true);
+            if (result != null) {
+                android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+                for (String cookie : sessionCookies) {
+                    cookieManager.setCookie(serverUrl, cookie);
+                }
+                cookieManager.flush();
+                statusText.setText("✅ Login code accepted. Ready to save.");
+                storeSection.setVisibility(View.VISIBLE);
+                storeInfo.setText("🏪 " + storeId);
+                btnSave.setVisibility(View.VISIBLE);
+            } else {
+                statusText.setText("❌ " + error);
+                storeSection.setVisibility(View.GONE);
+                btnSave.setVisibility(View.GONE);
+            }
+        }
     }
 
     private class ConnectTask extends AsyncTask<String, String, String> {
@@ -188,7 +423,7 @@ public class SettingsActivity extends Activity {
                     errReader.close();
 
                     if (code == 401) {
-                        error = "Invalid email or password";
+                        error = "Password login failed. If BTCPay has 2FA/passkeys enabled, use Scan BTCPay Login QR instead.";
                     } else {
                         error = "API error (" + code + "): " + errBody.toString();
                     }
@@ -293,13 +528,7 @@ public class SettingsActivity extends Activity {
     }
 
     private void saveAndLaunch() {
-        String url = inputUrl.getText().toString().trim();
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://" + url;
-        }
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
+        String url = normalizeUrl(inputUrl.getText().toString());
 
         String refreshStr = inputRefreshSeconds.getText().toString().trim();
         int refreshSeconds = 10;
@@ -316,7 +545,8 @@ public class SettingsActivity extends Activity {
         editor.putString(KEY_PASSWORD, inputPassword.getText().toString());
         editor.putString(KEY_STORE_ID, selectedStoreId);
         editor.putString(KEY_STORE_NAME, selectedStoreName);
-        editor.putString(KEY_API_KEY, apiKey);
+        editor.putString(KEY_API_KEY, apiKey == null ? "" : apiKey);
+        editor.putString(KEY_AUTH_METHOD, apiKey == null ? AUTH_METHOD_LOGIN_CODE : AUTH_METHOD_PASSWORD);
         editor.putInt(KEY_REFRESH_SECONDS, refreshSeconds);
         editor.putBoolean(KEY_NFC_ENABLED, switchNfc.isChecked());
         editor.putBoolean(KEY_ONBOARDED, true);
@@ -341,6 +571,29 @@ public class SettingsActivity extends Activity {
         String storeId = prefs.getString(KEY_STORE_ID, "");
         if (url.isEmpty() || storeId.isEmpty()) return null;
         return url + "/plugins/bitcoin-rewards/" + storeId + "/display";
+    }
+
+    public static String getBtcpayUrl(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_BTCPAY_URL, "");
+    }
+
+    public static String getStoreId(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_STORE_ID, "");
+    }
+
+    public static String getCheckInApiUrl(Context context) {
+        String url = getBtcpayUrl(context);
+        String storeId = getStoreId(context);
+        if (url.isEmpty() || storeId.isEmpty()) return null;
+        return url + "/plugins/bitcoin-rewards/" + storeId + "/check-in/api";
+    }
+
+    public static String getWalletTapUrl(Context context, String walletId) {
+        String url = getBtcpayUrl(context);
+        if (url.isEmpty() || walletId == null || walletId.isEmpty()) return null;
+        return url + "/plugins/bitcoin-rewards/wallet/" + walletId + "/tap";
     }
 
     public static String getLoginUrl(Context context) {
