@@ -140,6 +140,7 @@ public class SettingsActivity extends Activity {
         if (requestCode == LOGIN_CODE_SCAN_REQUEST && resultCode == RESULT_OK && data != null) {
             String payload = data.getStringExtra(LoginCodeScanActivity.EXTRA_LOGIN_CODE_PAYLOAD);
             applyLoginCodePayload(payload);
+            loginWithCode();
         }
     }
 
@@ -205,8 +206,8 @@ public class SettingsActivity extends Activity {
         String scannedCode = extractLoginCode(raw);
         inputLoginCode.setText(scannedCode);
         statusText.setText(scannedStoreId.isEmpty()
-            ? "✅ Login QR scanned. Tap Login with BTCPay Code; store will be auto-detected if possible."
-            : "✅ Login QR scanned with store ID. Tap Login with BTCPay Code.");
+            ? "✅ Login QR scanned. Logging in and detecting stores..."
+            : "✅ Login QR scanned with store ID. Logging in...");
         statusText.setVisibility(View.VISIBLE);
     }
 

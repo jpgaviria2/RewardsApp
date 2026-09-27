@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.2
+# Rewards NFC Display v2.9.3
 
 Clean standalone RewardsApp production release.
 
@@ -17,3 +17,5 @@ Clean standalone RewardsApp production release.
 - Store ID is optional for BTCPay login-code setup; the app auto-detects stores from the BTCPay session when possible.
 
 - Uses the BTCPay 2.4-compatible `/login?loginCode=...` endpoint for login-code exchange.
+
+- Scan BTCPay Login QR now logs in immediately after scanning, matching BTCPay login-code behavior.
