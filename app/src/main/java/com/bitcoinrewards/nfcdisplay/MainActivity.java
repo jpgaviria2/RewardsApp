@@ -26,6 +26,8 @@ import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -72,8 +74,12 @@ public class MainActivity extends Activity {
     private boolean nfcEnabled = true;
     private boolean loginAttempted = false;
     private NfcAdapter nfcAdapter;
+    private String currentLoadUrl = null;
+    private int webRecoveryAttempts = 0;
+    private boolean webRecoveryActive = false;
 
     private static final int CAMERA_PERMISSION_REQUEST = 5501;
+    private static final int MAX_WEB_RECOVERY_ATTEMPTS = 30;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -159,7 +165,15 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                currentLoadUrl = url;
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
+                webRecoveryActive = false;
+                webRecoveryAttempts = 0;
                 // Hide loading overlay
                 if (loadingText != null) {
                     loadingText.setVisibility(View.GONE);
@@ -180,6 +194,25 @@ public class MainActivity extends Activity {
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
                     injectNfcBanner(view);
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && request != null && request.isForMainFrame()) {
+                    String failingUrl = request.getUrl() == null ? currentLoadUrl : request.getUrl().toString();
+                    String description = error == null ? "WebView load failed" : String.valueOf(error.getDescription());
+                    scheduleWebRecovery(failingUrl, description);
+                }
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+                    scheduleWebRecovery(failingUrl, description);
                 }
             }
         });
@@ -213,6 +246,51 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void scheduleWebRecovery(String failingUrl, String reason) {
+        if (webView == null) return;
+        if (failingUrl != null) currentLoadUrl = failingUrl;
+        webRecoveryActive = true;
+        webRecoveryAttempts++;
+        if (btnScanRewardsProfile != null) btnScanRewardsProfile.setVisibility(View.GONE);
+        if (loadingText != null) {
+            loadingText.setText("Reconnecting to BTCPay...\n" + reason);
+            loadingText.setVisibility(View.VISIBLE);
+        }
+        webView.setVisibility(View.INVISIBLE);
+        Log.w(TAG, "WebView load failed, scheduling recovery attempt " + webRecoveryAttempts + ": " + reason + " url=" + failingUrl);
+
+        if (webRecoveryAttempts > MAX_WEB_RECOVERY_ATTEMPTS) {
+            if (loadingText != null) {
+                loadingText.setText("Could not reconnect to BTCPay. Check Wi‑Fi, then tap the settings icon or reopen the app.");
+            }
+            return;
+        }
+
+        long delayMs = Math.min(30000, 1500L * webRecoveryAttempts);
+        handler.postDelayed(() -> recoverWebView("load error"), delayMs);
+    }
+
+    private void recoverWebView(String reason) {
+        if (webView == null || !SettingsActivity.isOnboarded(this)) return;
+        SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
+        String btcpayUrl = prefs.getString(SettingsActivity.KEY_BTCPAY_URL, "");
+        String displayUrl = SettingsActivity.getDisplayUrl(this);
+        if (displayUrl == null || displayUrl.isEmpty()) return;
+
+        applySavedSessionCookies(prefs, btcpayUrl);
+        String target = currentLoadUrl;
+        if (target == null || target.trim().isEmpty() || target.contains("chrome-error://") || target.contains("data:text/html")) {
+            target = displayUrl;
+        }
+        if (loadingText != null) {
+            loadingText.setText("Reconnecting to BTCPay...");
+            loadingText.setVisibility(View.VISIBLE);
+        }
+        webView.setVisibility(View.INVISIBLE);
+        Log.i(TAG, "Recovering WebView after " + reason + ": " + target);
+        webView.loadUrl(target);
+    }
+
     private void updateRewardsProfileScanVisibility(String url) {
         if (btnScanRewardsProfile == null) {
             return;
@@ -231,6 +309,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (webView != null && SettingsActivity.isOnboarded(this)) {
+            handler.postDelayed(() -> recoverWebView("resume"), 1200);
+        }
         if (nfcEnabled) {
             // Set this app's HCE service as the preferred one
             try {
@@ -260,6 +341,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        handler.removeCallbacksAndMessages(null);
         if (nfcEnabled && nfcAdapter != null) {
             try {
                 CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);

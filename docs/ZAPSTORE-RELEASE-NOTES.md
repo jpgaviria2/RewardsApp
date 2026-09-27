@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.10.0
+# Rewards NFC Display v2.10.1
 
 Clean standalone RewardsApp production release.
 
@@ -45,3 +45,7 @@ Clean standalone RewardsApp production release.
 - Rewards profile scanner now defaults to the front camera for customer-facing countertop use.
 
 - Add a Flip Camera control to switch between front and back cameras while scanning customer Lightning-address QR codes.
+
+- Automatically recover the WebView after screen lock/unlock or temporary DNS/network errors by reapplying cookies and retrying the rewards display.
+
+- Hide customer scan controls while reconnecting so Android WebView error pages do not leave kiosk controls over a failed page.
