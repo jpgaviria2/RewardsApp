@@ -17,6 +17,7 @@ import android.widget.Toast;
 import com.journeyapps.barcodescanner.BarcodeCallback;
 import com.journeyapps.barcodescanner.BarcodeResult;
 import com.journeyapps.barcodescanner.DecoratedBarcodeView;
+import com.journeyapps.barcodescanner.camera.CameraSettings;
 
 import org.json.JSONObject;
 
@@ -44,6 +45,7 @@ public class RewardsProfileScanActivity extends Activity {
     private DecoratedBarcodeView barcodeView;
     private TextView statusText;
     private boolean submitted = false;
+    private boolean useFrontCamera = true;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -56,6 +58,10 @@ public class RewardsProfileScanActivity extends Activity {
         Button close = findViewById(R.id.btn_close_scan);
         if (close != null) {
             close.setOnClickListener(v -> finish());
+        }
+        Button flip = findViewById(R.id.btn_flip_camera);
+        if (flip != null) {
+            flip.setOnClickListener(v -> flipCamera());
         }
 
         String apiUrl = SettingsActivity.getCheckInApiUrl(this);
@@ -85,9 +91,26 @@ public class RewardsProfileScanActivity extends Activity {
 
     private void startScanning() {
         submitted = false;
-        setStatus("Point the camera at the customer's wallet QR. It must contain a Lightning address.");
+        configureCamera();
+        setStatus((useFrontCamera ? "Front camera: " : "Back camera: ") + "show the customer's wallet Lightning address QR.");
         barcodeView.decodeContinuous(callback);
         barcodeView.resume();
+    }
+
+    private void configureCamera() {
+        CameraSettings settings = new CameraSettings();
+        settings.setRequestedCameraId(useFrontCamera ? 1 : 0);
+        settings.setAutoFocusEnabled(true);
+        settings.setContinuousFocusEnabled(true);
+        barcodeView.setCameraSettings(settings);
+    }
+
+    private void flipCamera() {
+        useFrontCamera = !useFrontCamera;
+        if (barcodeView != null) {
+            barcodeView.pauseAndWait();
+            startScanning();
+        }
     }
 
     private final BarcodeCallback callback = new BarcodeCallback() {

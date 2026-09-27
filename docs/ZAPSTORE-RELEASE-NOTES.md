@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.9
+# Rewards NFC Display v2.10.0
 
 Clean standalone RewardsApp production release.
 
@@ -41,3 +41,7 @@ Clean standalone RewardsApp production release.
 - Open BTCPay login with a rewards-display return URL so successful web login returns to the kiosk display.
 
 - Keep customer profile scan overlays hidden on BTCPay login pages while allowing the BTCPay web scanner to use camera access.
+
+- Rewards profile scanner now defaults to the front camera for customer-facing countertop use.
+
+- Add a Flip Camera control to switch between front and back cameras while scanning customer Lightning-address QR codes.
