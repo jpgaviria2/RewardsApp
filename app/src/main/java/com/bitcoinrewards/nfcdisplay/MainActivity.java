@@ -33,10 +33,17 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService;
+import com.journeyapps.barcodescanner.BarcodeCallback;
+import com.journeyapps.barcodescanner.BarcodeResult;
+import com.journeyapps.barcodescanner.DecoratedBarcodeView;
+import com.journeyapps.barcodescanner.camera.CameraSettings;
+
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -64,11 +71,17 @@ public class MainActivity extends Activity {
     private static final String TAG = "RewardsNFC";
     // Wallet ID pattern: 8+ char hex or UUID-style
     private static final Pattern WALLET_ID_PATTERN = Pattern.compile("^[a-fA-F0-9\\-]{8,}$");
+    private static final Pattern LIGHTNING_ADDRESS = Pattern.compile(
+        "^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?@[a-z0-9.-]+\\.[a-z]{2,}$"
+    );
 
     private WebView webView;
     private TextView nfcTapOverlay;
     private TextView loadingText;
-    private Button btnScanRewardsProfile;
+    private LinearLayout rewardsScannerPanel;
+    private DecoratedBarcodeView inlineRewardsScanner;
+    private TextView rewardsScannerStatus;
+    private Button btnFlipInlineCamera;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String currentLnurl = null;
     private boolean nfcEnabled = true;
@@ -77,6 +90,11 @@ public class MainActivity extends Activity {
     private String currentLoadUrl = null;
     private int webRecoveryAttempts = 0;
     private boolean webRecoveryActive = false;
+    private boolean useFrontRewardsCamera = true;
+    private boolean inlineScannerRunning = false;
+    private boolean inlineSubmissionInFlight = false;
+    private String lastSubmittedLightningAddress = null;
+    private long lastSubmittedAtMs = 0;
 
     private static final int CAMERA_PERMISSION_REQUEST = 5501;
     private static final int MAX_WEB_RECOVERY_ATTEMPTS = 30;
@@ -123,12 +141,12 @@ public class MainActivity extends Activity {
             });
         }
 
-        btnScanRewardsProfile = findViewById(R.id.btn_scan_rewards_profile);
-        if (btnScanRewardsProfile != null) {
-            btnScanRewardsProfile.setVisibility(View.GONE);
-            btnScanRewardsProfile.setOnClickListener(v -> {
-                startActivity(new Intent(this, RewardsProfileScanActivity.class));
-            });
+        rewardsScannerPanel = findViewById(R.id.rewards_scanner_panel);
+        inlineRewardsScanner = findViewById(R.id.inline_rewards_scanner);
+        rewardsScannerStatus = findViewById(R.id.rewards_scanner_status);
+        btnFlipInlineCamera = findViewById(R.id.btn_flip_inline_camera);
+        if (btnFlipInlineCamera != null) {
+            btnFlipInlineCamera.setOnClickListener(v -> flipInlineRewardsCamera());
         }
 
         WebSettings settings = webView.getSettings();
@@ -190,6 +208,7 @@ public class MainActivity extends Activity {
                 }
 
                 updateRewardsProfileScanVisibility(url);
+                updateInlineScannerForPage(view, url);
 
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
@@ -251,7 +270,7 @@ public class MainActivity extends Activity {
         if (failingUrl != null) currentLoadUrl = failingUrl;
         webRecoveryActive = true;
         webRecoveryAttempts++;
-        if (btnScanRewardsProfile != null) btnScanRewardsProfile.setVisibility(View.GONE);
+        hideInlineRewardsScanner();
         if (loadingText != null) {
             loadingText.setText("Reconnecting to BTCPay...\n" + reason);
             loadingText.setVisibility(View.VISIBLE);
@@ -292,9 +311,6 @@ public class MainActivity extends Activity {
     }
 
     private void updateRewardsProfileScanVisibility(String url) {
-        if (btnScanRewardsProfile == null) {
-            return;
-        }
         String safeUrl = url == null ? "" : url.toLowerCase();
         boolean isLoginOrAccountPage = safeUrl.contains("/login")
             || safeUrl.contains("/account/")
@@ -303,7 +319,189 @@ public class MainActivity extends Activity {
         boolean isRewardsDisplayPage = safeUrl.contains("/plugins/bitcoin-rewards/")
             && (safeUrl.contains("/display") || safeUrl.contains("/check-in"));
 
-        btnScanRewardsProfile.setVisibility(!isLoginOrAccountPage && isRewardsDisplayPage ? View.VISIBLE : View.GONE);
+        if (!isLoginOrAccountPage && isRewardsDisplayPage) {
+            showInlineRewardsScanner(false);
+        } else {
+            hideInlineRewardsScanner();
+        }
+    }
+
+    private void updateInlineScannerForPage(WebView view, String url) {
+        String safeUrl = url == null ? "" : url.toLowerCase();
+        if (!safeUrl.contains("/plugins/bitcoin-rewards/") || !(safeUrl.contains("/display") || safeUrl.contains("/check-in"))) {
+            return;
+        }
+        view.evaluateJavascript(
+            "(function(){" +
+            "var hasQr=!!document.querySelector('.qr-code img, img[alt*=\\\"Reward QR\\\"], #nfc-lnurl-data[data-lnurl]');" +
+            "return JSON.stringify({hasQr:hasQr});" +
+            "})()",
+            value -> {
+                boolean hasQr = value != null && value.contains("\\\"hasQr\\\":true");
+                showInlineRewardsScanner(hasQr);
+            }
+        );
+    }
+
+    private void showInlineRewardsScanner(boolean rewardVisible) {
+        if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
+        rewardsScannerPanel.setVisibility(View.VISIBLE);
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
+        params.weight = rewardVisible ? 0.55f : 1.05f;
+        rewardsScannerPanel.setLayoutParams(params);
+        setRewardsScannerStatus(rewardVisible
+            ? "Reward QR is available below — scanner stays ready for the next customer"
+            : "Front camera ready — show your wallet Lightning address QR");
+        if (!inlineScannerRunning) {
+            configureInlineRewardsCamera();
+            inlineRewardsScanner.decodeContinuous(inlineRewardsCallback);
+            inlineRewardsScanner.resume();
+            inlineScannerRunning = true;
+        }
+    }
+
+    private void hideInlineRewardsScanner() {
+        if (rewardsScannerPanel != null) rewardsScannerPanel.setVisibility(View.GONE);
+        if (inlineRewardsScanner != null && inlineScannerRunning) {
+            inlineRewardsScanner.pause();
+        }
+        inlineScannerRunning = false;
+    }
+
+    private void configureInlineRewardsCamera() {
+        if (inlineRewardsScanner == null) return;
+        CameraSettings cameraSettings = new CameraSettings();
+        cameraSettings.setRequestedCameraId(useFrontRewardsCamera ? 1 : 0);
+        cameraSettings.setAutoFocusEnabled(true);
+        cameraSettings.setContinuousFocusEnabled(true);
+        inlineRewardsScanner.setCameraSettings(cameraSettings);
+    }
+
+    private void flipInlineRewardsCamera() {
+        useFrontRewardsCamera = !useFrontRewardsCamera;
+        if (inlineRewardsScanner != null) {
+            inlineRewardsScanner.pauseAndWait();
+            inlineScannerRunning = false;
+            configureInlineRewardsCamera();
+            inlineRewardsScanner.decodeContinuous(inlineRewardsCallback);
+            inlineRewardsScanner.resume();
+            inlineScannerRunning = true;
+            setRewardsScannerStatus((useFrontRewardsCamera ? "Front" : "Back") + " camera ready — show wallet Lightning address QR");
+        }
+    }
+
+    private final BarcodeCallback inlineRewardsCallback = new BarcodeCallback() {
+        @Override
+        public void barcodeResult(BarcodeResult result) {
+            if (result == null || result.getText() == null || inlineSubmissionInFlight) return;
+            String lightningAddress;
+            try {
+                lightningAddress = normalizeLightningAddress(result.getText());
+            } catch (IllegalArgumentException e) {
+                setRewardsScannerStatus(e.getMessage());
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (lightningAddress.equals(lastSubmittedLightningAddress) && now - lastSubmittedAtMs < 15000) {
+                return;
+            }
+            inlineSubmissionInFlight = true;
+            lastSubmittedLightningAddress = lightningAddress;
+            lastSubmittedAtMs = now;
+            setRewardsScannerStatus("Saving " + maskLightningAddress(lightningAddress) + "...");
+            vibrate(80);
+            new SubmitInlineCheckInTask().execute(lightningAddress);
+        }
+    };
+
+    private static String normalizeLightningAddress(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.toLowerCase().startsWith("lightning:")) {
+            value = value.substring("lightning:".length()).trim();
+        }
+        value = value.toLowerCase();
+        if (value.startsWith("lnbc") || value.startsWith("lnurl") || value.startsWith("http://") ||
+            value.startsWith("https://") || value.startsWith("npub") || value.startsWith("nostr:")) {
+            throw new IllegalArgumentException("Show a wallet Lightning address QR, not an invoice/link.");
+        }
+        if (value.length() > 128 || !LIGHTNING_ADDRESS.matcher(value).matches()) {
+            throw new IllegalArgumentException("QR must be a Lightning address like user@example.com.");
+        }
+        return value;
+    }
+
+    private static String maskLightningAddress(String address) {
+        if (address == null) return "customer";
+        int at = address.indexOf('@');
+        if (at <= 1) return address;
+        String local = address.substring(0, at);
+        String domain = address.substring(at + 1);
+        return local.substring(0, Math.min(3, local.length())) + "…@" + domain;
+    }
+
+    private void setRewardsScannerStatus(String text) {
+        if (rewardsScannerStatus != null) rewardsScannerStatus.setText(text);
+    }
+
+    private void vibrate(int ms) {
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.vibrate(ms);
+        } catch (Exception ignored) { }
+    }
+
+    private class SubmitInlineCheckInTask extends AsyncTask<String, Void, Boolean> {
+        private String lightningAddress;
+        private String error;
+
+        @Override
+        protected Boolean doInBackground(String... params) {
+            lightningAddress = params[0];
+            try {
+                String apiUrl = SettingsActivity.getCheckInApiUrl(MainActivity.this);
+                if (apiUrl == null || apiUrl.isEmpty()) {
+                    error = "Store is not configured";
+                    return false;
+                }
+                JSONObject body = new JSONObject();
+                body.put("lightningAddress", lightningAddress);
+                body.put("deviceId", "rewards-nfc-display-inline");
+
+                HttpURLConnection conn = (HttpURLConnection) new URL(apiUrl).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(15000);
+                conn.setDoOutput(true);
+                OutputStream os = conn.getOutputStream();
+                os.write(body.toString().getBytes("UTF-8"));
+                os.flush();
+                os.close();
+
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) return true;
+                error = "BTCPay rejected check-in (" + code + ")";
+                return false;
+            } catch (Exception e) {
+                Log.e(TAG, "Inline rewards profile check-in failed", e);
+                error = e.getMessage();
+                return false;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(Boolean ok) {
+            inlineSubmissionInFlight = false;
+            if (ok) {
+                setRewardsScannerStatus("✅ Waiting to reward " + maskLightningAddress(lightningAddress));
+                Toast.makeText(MainActivity.this, "Rewards profile saved: " + maskLightningAddress(lightningAddress), Toast.LENGTH_LONG).show();
+                vibrate(180);
+                webView.reload();
+            } else {
+                setRewardsScannerStatus("Could not save profile: " + error);
+            }
+        }
     }
 
     @Override
@@ -311,6 +509,10 @@ public class MainActivity extends Activity {
         super.onResume();
         if (webView != null && SettingsActivity.isOnboarded(this)) {
             handler.postDelayed(() -> recoverWebView("resume"), 1200);
+        }
+        if (inlineRewardsScanner != null && rewardsScannerPanel != null && rewardsScannerPanel.getVisibility() == View.VISIBLE) {
+            inlineRewardsScanner.resume();
+            inlineScannerRunning = true;
         }
         if (nfcEnabled) {
             // Set this app's HCE service as the preferred one
@@ -342,6 +544,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         handler.removeCallbacksAndMessages(null);
+        if (inlineRewardsScanner != null) {
+            inlineRewardsScanner.pause();
+            inlineScannerRunning = false;
+        }
         if (nfcEnabled && nfcAdapter != null) {
             try {
                 CardEmulation cardEmulation = CardEmulation.getInstance(nfcAdapter);
