@@ -141,6 +141,11 @@ public class MainActivity extends Activity {
                 if (url.contains("/login") || url.contains("/Account/Login")) {
                     Log.i(TAG, "Login page shown in WebView — user can log in manually");
                     updateRewardsProfileScanVisibility(url);
+                    if (isLoginCodeAuth()) {
+                        Toast.makeText(MainActivity.this, "BTCPay session expired. Scan the login QR in app settings.", Toast.LENGTH_LONG).show();
+                        startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+                        finish();
+                    }
                     // Don't interfere — let the user type
                     return;
                 }
@@ -264,7 +269,12 @@ public class MainActivity extends Activity {
         if (SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(authMethod)) {
             String displayUrl = SettingsActivity.getDisplayUrl(this);
             if (displayUrl != null) {
-                applySavedSessionCookies(prefs, btcpayUrl);
+                if (!applySavedSessionCookies(prefs, btcpayUrl)) {
+                    Toast.makeText(this, "Scan the BTCPay login QR to start.", Toast.LENGTH_LONG).show();
+                    startActivity(new Intent(this, SettingsActivity.class));
+                    finish();
+                    return;
+                }
                 webView.loadUrl(displayUrl);
             }
             return;
@@ -279,21 +289,31 @@ public class MainActivity extends Activity {
         new LoginTask().execute(btcpayUrl, email, password, apiKey);
     }
 
-    private void applySavedSessionCookies(SharedPreferences prefs, String btcpayUrl) {
+    private boolean isLoginCodeAuth() {
+        SharedPreferences prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE);
+        return SettingsActivity.AUTH_METHOD_LOGIN_CODE.equals(
+            prefs.getString(SettingsActivity.KEY_AUTH_METHOD, SettingsActivity.AUTH_METHOD_PASSWORD)
+        );
+    }
+
+    private boolean applySavedSessionCookies(SharedPreferences prefs, String btcpayUrl) {
         String cookieHeader = prefs.getString(SettingsActivity.KEY_SESSION_COOKIES, "");
         if (btcpayUrl == null || btcpayUrl.isEmpty() || cookieHeader == null || cookieHeader.trim().isEmpty()) {
-            return;
+            return false;
         }
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
+        boolean applied = false;
         String[] cookies = cookieHeader.split(";");
         for (String cookie : cookies) {
             String trimmed = cookie.trim();
             if (!trimmed.isEmpty() && trimmed.contains("=")) {
                 cookieManager.setCookie(btcpayUrl, trimmed);
+                applied = true;
             }
         }
         cookieManager.flush();
+        return applied;
     }
 
     private class LoginTask extends AsyncTask<String, Void, Boolean> {
