@@ -197,9 +197,16 @@ public class SettingsActivity extends Activity {
             inputUrl.setText(scannedUrl);
         }
 
+        String scannedStoreId = extractStoreId(raw);
+        if (!scannedStoreId.isEmpty()) {
+            inputStoreId.setText(scannedStoreId);
+        }
+
         String scannedCode = extractLoginCode(raw);
         inputLoginCode.setText(scannedCode);
-        statusText.setText("✅ Login QR scanned. Tap Login with BTCPay Code.");
+        statusText.setText(scannedStoreId.isEmpty()
+            ? "✅ Login QR scanned. Tap Login with BTCPay Code; store will be auto-detected if possible."
+            : "✅ Login QR scanned with store ID. Tap Login with BTCPay Code.");
         statusText.setVisibility(View.VISIBLE);
     }
 
@@ -251,6 +258,43 @@ public class SettingsActivity extends Activity {
         return "";
     }
 
+    private static String extractStoreId(String raw) {
+        if (raw == null) return "";
+        String value = raw.trim();
+        if (value.isEmpty()) return "";
+
+        try {
+            String returnUrl = "";
+            if (value.startsWith("http://") || value.startsWith("https://")) {
+                URL parsed = new URL(value);
+                String query = parsed.getQuery();
+                if (query != null) {
+                    for (String part : query.split("&")) {
+                        int equals = part.indexOf('=');
+                        String key = equals >= 0 ? part.substring(0, equals) : part;
+                        String val = equals >= 0 ? part.substring(equals + 1) : "";
+                        if ("returnUrl".equalsIgnoreCase(URLDecoder.decode(key, "UTF-8"))) {
+                            returnUrl = URLDecoder.decode(val, "UTF-8");
+                            break;
+                        }
+                    }
+                }
+                if (returnUrl.isEmpty()) returnUrl = parsed.getPath();
+            } else {
+                String[] parts = value.split(";", 3);
+                if (parts.length >= 2) returnUrl = parts[1];
+            }
+
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("/plugins/bitcoin-rewards/([^/]+)/")
+                .matcher(returnUrl);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        } catch (Exception ignored) { }
+        return "";
+    }
+
     private void loginWithCode() {
         String url = normalizeUrl(inputUrl.getText().toString().trim());
         String storeId = inputStoreId.getText().toString().trim();
@@ -268,10 +312,6 @@ public class SettingsActivity extends Activity {
             }
             statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
             statusText.setVisibility(View.VISIBLE);
-            return;
-        }
-        if (storeId.isEmpty()) {
-            inputStoreId.setError("Required for login-code setup");
             return;
         }
         if (loginCode.isEmpty()) {
@@ -324,7 +364,9 @@ public class SettingsActivity extends Activity {
             String loginCode = params[2];
             try {
                 publishProgress("Exchanging login code...");
-                String returnUrl = "/plugins/bitcoin-rewards/" + URLEncoder.encode(storeId, "UTF-8") + "/display";
+                String returnUrl = storeId == null || storeId.isEmpty()
+                    ? "/stores"
+                    : "/plugins/bitcoin-rewards/" + URLEncoder.encode(storeId, "UTF-8") + "/display";
                 URL codeUrl = new URL(serverUrl + "/login/code?loginCode=" + URLEncoder.encode(loginCode, "UTF-8") + "&returnUrl=" + URLEncoder.encode(returnUrl, "UTF-8"));
                 HttpURLConnection conn = (HttpURLConnection) codeUrl.openConnection();
                 conn.setRequestMethod("GET");
@@ -343,6 +385,13 @@ public class SettingsActivity extends Activity {
                 }
 
                 if ((code == 302 || code == 303 || code == 200) && !sessionCookies.isEmpty()) {
+                    if (storeId == null || storeId.isEmpty()) {
+                        publishProgress("Finding stores...");
+                        if (!fetchStoresWithSessionCookies()) {
+                            error = "Login accepted, but the app could not auto-detect a store. Enter Store ID once, or scan a login QR generated from the store display/settings page.";
+                            return null;
+                        }
+                    }
                     return "OK";
                 }
                 error = code == 0 ? "No response from BTCPay" : "Login code failed (HTTP " + code + "). Generate a fresh code and try again.";
@@ -355,6 +404,54 @@ public class SettingsActivity extends Activity {
                 Log.e(TAG, "Login code error", e);
                 return null;
             }
+        }
+
+        private boolean fetchStoresWithSessionCookies() {
+            try {
+                URL storesUrl = new URL(serverUrl + "/api/v1/stores");
+                HttpURLConnection storesConn = (HttpURLConnection) storesUrl.openConnection();
+                storesConn.setRequestMethod("GET");
+                storesConn.setRequestProperty("Accept", "application/json");
+                storesConn.setRequestProperty("Cookie", buildCookieHeader());
+                storesConn.setConnectTimeout(15000);
+                storesConn.setReadTimeout(15000);
+
+                int storesCode = storesConn.getResponseCode();
+                if (storesCode != 200) return false;
+
+                BufferedReader storesReader = new BufferedReader(new InputStreamReader(storesConn.getInputStream()));
+                StringBuilder storesBody = new StringBuilder();
+                String storesLine;
+                while ((storesLine = storesReader.readLine()) != null) storesBody.append(storesLine);
+                storesReader.close();
+
+                JSONArray stores = new JSONArray(storesBody.toString());
+                if (stores.length() == 0) return false;
+
+                availableStores = stores;
+                currentStoreIndex = 0;
+                JSONObject firstStore = stores.getJSONObject(0);
+                storeId = firstStore.getString("id");
+                selectedStoreId = storeId;
+                selectedStoreName = firstStore.optString("name", selectedStoreId);
+                inputStoreId.setText(storeId);
+                return true;
+            } catch (Exception e) {
+                Log.e(TAG, "Store auto-detect failed", e);
+                return false;
+            }
+        }
+
+        private String buildCookieHeader() {
+            StringBuilder header = new StringBuilder();
+            for (String cookie : sessionCookies) {
+                if (cookie == null || cookie.isEmpty()) continue;
+                String firstPart = cookie.split(";", 2)[0];
+                if (firstPart.isEmpty()) continue;
+                if (header.length() > 0) header.append("; ");
+                header.append(firstPart);
+            }
+            return header.toString();
         }
 
         @Override
