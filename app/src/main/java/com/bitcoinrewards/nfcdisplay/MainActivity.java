@@ -210,6 +210,7 @@ public class MainActivity extends Activity {
 
                 updateRewardsProfileScanVisibility(url);
                 updateInlineScannerForPage(view, url);
+                view.evaluateJavascript("window.scrollTo(0, 0);", null);
 
                 if (nfcEnabled) {
                     extractLnurlFromPage(view);
