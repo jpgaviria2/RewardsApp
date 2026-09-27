@@ -1,4 +1,4 @@
-# Rewards NFC Display v2.9.6
+# Rewards NFC Display v2.9.7
 
 Clean standalone RewardsApp production release.
 
@@ -25,3 +25,7 @@ Clean standalone RewardsApp production release.
 - Persist BTCPay login-code session cookies and inject them into the WebView before opening the rewards display, preventing a second BTCPay login screen after authentication.
 
 - If a login-code session is missing or BTCPay redirects back to login, return to app settings for native QR login instead of showing BTCPay web camera/login pages.
+
+- Scan BTCPay Login QR now saves and launches the display automatically after a successful login; no separate Save & Launch tap is required.
+
+- Store the full BTCPay Set-Cookie lines and replay them into the WebView to keep the login-code session active when launching display.

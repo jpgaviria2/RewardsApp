@@ -297,18 +297,22 @@ public class MainActivity extends Activity {
     }
 
     private boolean applySavedSessionCookies(SharedPreferences prefs, String btcpayUrl) {
-        String cookieHeader = prefs.getString(SettingsActivity.KEY_SESSION_COOKIES, "");
-        if (btcpayUrl == null || btcpayUrl.isEmpty() || cookieHeader == null || cookieHeader.trim().isEmpty()) {
+        String savedCookies = prefs.getString(SettingsActivity.KEY_SESSION_COOKIES, "");
+        if (btcpayUrl == null || btcpayUrl.isEmpty() || savedCookies == null || savedCookies.trim().isEmpty()) {
             return false;
         }
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         boolean applied = false;
-        String[] cookies = cookieHeader.split(";");
+        String[] cookies = savedCookies.contains("\n") ? savedCookies.split("\n") : savedCookies.split(";");
         for (String cookie : cookies) {
             String trimmed = cookie.trim();
             if (!trimmed.isEmpty() && trimmed.contains("=")) {
                 cookieManager.setCookie(btcpayUrl, trimmed);
+                int semicolon = trimmed.indexOf(';');
+                if (semicolon > 0) {
+                    cookieManager.setCookie(btcpayUrl, trimmed.substring(0, semicolon));
+                }
                 applied = true;
             }
         }

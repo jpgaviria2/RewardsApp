@@ -457,6 +457,16 @@ public class SettingsActivity extends Activity {
             return header.toString();
         }
 
+        private String buildSetCookieLines() {
+            StringBuilder lines = new StringBuilder();
+            for (String cookie : sessionCookies) {
+                if (cookie == null || cookie.isEmpty()) continue;
+                if (lines.length() > 0) lines.append("\n");
+                lines.append(cookie);
+            }
+            return lines.toString();
+        }
+
         @Override
         protected void onProgressUpdate(String... values) {
             statusText.setText("🔄 " + values[0]);
@@ -467,16 +477,17 @@ public class SettingsActivity extends Activity {
             btnConnect.setEnabled(true);
             if (result != null) {
                 android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
-                String cookieHeader = buildCookieHeader();
+                String cookieLines = buildSetCookieLines();
                 for (String cookie : sessionCookies) {
                     cookieManager.setCookie(serverUrl, cookie);
                 }
                 cookieManager.flush();
-                loginCodeSessionCookies = cookieHeader;
-                statusText.setText("✅ Login code accepted. Ready to save.");
+                loginCodeSessionCookies = cookieLines;
+                statusText.setText("✅ Login code accepted. Launching display...");
                 storeSection.setVisibility(View.VISIBLE);
                 storeInfo.setText("🏪 " + storeId);
-                btnSave.setVisibility(View.VISIBLE);
+                btnSave.setVisibility(View.GONE);
+                saveAndLaunch();
             } else {
                 statusText.setText("❌ " + error);
                 storeSection.setVisibility(View.GONE);
