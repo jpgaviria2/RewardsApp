@@ -1,5 +1,5 @@
-# Rewards NFC Display 2.12.0
+# Rewards NFC Display 2.12.1
 
-- Moves the always-on rewards camera scanner to the top of the kiosk display.
-- Simplifies the counter layout so the customer sees scanner first, then the BTCPay display card below.
-- Keeps front-camera scanning, camera flip, scan confirmation, and WebView recovery behavior.
+- Updates the NFC tap-to-claim banner to match Trails-style branding: deep green, cream text, and gold accent border/shadow.
+- Removes the previous purple/blue gradient from the customer-facing reward claim prompt.
+- Makes the inline scanner Flip button use the same cream/deep-green palette.

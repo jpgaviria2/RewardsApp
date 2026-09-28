@@ -806,10 +806,10 @@ public class MainActivity extends Activity {
             "if (!qr) return;" +
             "var banner = document.createElement('div');" +
             "banner.id = 'nfc-tap-banner';" +
-            "banner.innerHTML = '📱 TAP YOUR PHONE HERE TO CLAIM';" +
-            "banner.style.cssText = 'background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:22px;font-weight:bold;padding:20px;margin:15px auto;border-radius:16px;text-align:center;max-width:400px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 4px 20px rgba(102,126,234,0.5);';" +
+            "banner.innerHTML = '<span style=\"font-size:19px;vertical-align:-2px\">📱</span> TAP TO CLAIM';" +
+            "banner.style.cssText = 'background:linear-gradient(135deg,#173F2F,#0D2B20);color:#F4EDDF;font-size:19px;font-weight:900;line-height:1;letter-spacing:.02em;padding:15px 18px;margin:12px auto 10px;border-radius:16px;text-align:center;max-width:380px;animation:nfcPulse 2s ease-in-out infinite;box-shadow:0 8px 24px rgba(23,63,47,0.34);border:2px solid #D9C27A;';" +
             "var style = document.createElement('style');" +
-            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 4px 20px rgba(102,126,234,0.5)} 50%{transform:scale(1.03);box-shadow:0 6px 30px rgba(102,126,234,0.8)} }';" +
+            "style.textContent = '@keyframes nfcPulse { 0%,100%{transform:scale(1);box-shadow:0 8px 26px rgba(23,63,47,0.38)} 50%{transform:scale(1.025);box-shadow:0 12px 34px rgba(217,194,122,0.48)} } #nfc-tap-banner + .amount, #nfc-tap-banner ~ .amount { color:#173F2F !important; }';" +
             "document.head.appendChild(style);" +
             "var parent = qr.parentElement || qr.parentNode;" +
             "if (parent) { parent.insertBefore(banner, qr.nextSibling); }" +

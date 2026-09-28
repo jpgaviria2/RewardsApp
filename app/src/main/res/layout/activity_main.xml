@@ -51,6 +51,8 @@
                     android:minHeight="0dp"
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
+                    android:backgroundTint="#F4EDDF"
+                    android:textColor="#173F2F"
                     android:text="Flip"
                     android:textAllCaps="false" />
             </LinearLayout>
