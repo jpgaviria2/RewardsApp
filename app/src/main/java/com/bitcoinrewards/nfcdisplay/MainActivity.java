@@ -208,6 +208,10 @@ public class MainActivity extends Activity {
                     return;
                 }
 
+                if (redirectToRewardsDisplayIfNeeded(url)) {
+                    return;
+                }
+
                 updateRewardsProfileScanVisibility(url);
                 updateInlineScannerForPage(view, url);
                 view.evaluateJavascript("window.scrollTo(0, 0);", null);
@@ -310,6 +314,34 @@ public class MainActivity extends Activity {
         webView.setVisibility(View.INVISIBLE);
         Log.i(TAG, "Recovering WebView after " + reason + ": " + target);
         webView.loadUrl(target);
+    }
+
+    private boolean redirectToRewardsDisplayIfNeeded(String url) {
+        String displayUrl = SettingsActivity.getDisplayUrl(this);
+        String btcpayUrl = SettingsActivity.getBtcpayUrl(this);
+        if (url == null || displayUrl == null || displayUrl.isEmpty() || btcpayUrl == null || btcpayUrl.isEmpty()) {
+            return false;
+        }
+
+        String safeUrl = url.toLowerCase();
+        String safeDisplayUrl = displayUrl.toLowerCase();
+        String safeBtcpayUrl = btcpayUrl.toLowerCase();
+
+        if (safeUrl.equals(safeDisplayUrl) || safeUrl.contains("/plugins/bitcoin-rewards/")) {
+            return false;
+        }
+        if (safeUrl.contains("/login") || safeUrl.contains("/account/")) {
+            return false;
+        }
+        if (!safeUrl.startsWith(safeBtcpayUrl)) {
+            return false;
+        }
+
+        Log.i(TAG, "Authenticated WebView landed outside rewards display; redirecting to kiosk display: " + url + " -> " + displayUrl);
+        applySavedSessionCookies(getSharedPreferences(SettingsActivity.PREFS_NAME, Context.MODE_PRIVATE), btcpayUrl);
+        currentLoadUrl = displayUrl;
+        webView.loadUrl(displayUrl);
+        return true;
     }
 
     private void updateRewardsProfileScanVisibility(String url) {

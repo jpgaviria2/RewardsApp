@@ -1,5 +1,5 @@
-# Rewards NFC Display 2.12.1
+# Rewards NFC Display 2.12.2
 
-- Updates the NFC tap-to-claim banner to match Trails-style branding: deep green, cream text, and gold accent border/shadow.
-- Removes the previous purple/blue gradient from the customer-facing reward claim prompt.
-- Makes the inline scanner Flip button use the same cream/deep-green palette.
+- Fixes BTCPay login-code flow so after authentication the kiosk returns to the configured Bitcoin Rewards display instead of landing on the BTCPay store dashboard.
+- Keeps the app locked to `/plugins/bitcoin-rewards/{storeId}/display` after successful login while still allowing the BTCPay login page during authentication.
+- Preserves the v2.12.1 scanner/display layout and Trails-style customer claim UI.
