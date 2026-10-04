@@ -214,6 +214,7 @@ public class MainActivity extends Activity {
 
                 updateRewardsProfileScanVisibility(url);
                 updateInlineScannerForPage(view, url);
+                showCustomerCheckInInstructions(view, url);
                 view.evaluateJavascript("window.scrollTo(0, 0);", null);
 
                 if (nfcEnabled) {
@@ -377,6 +378,18 @@ public class MainActivity extends Activity {
         );
     }
 
+    private void showCustomerCheckInInstructions(WebView view, String url) {
+        String safeUrl = url == null ? "" : url.toLowerCase();
+        if (!safeUrl.contains("/plugins/bitcoin-rewards/") || !safeUrl.contains("/display")) return;
+        view.evaluateJavascript(
+            "(function(){" +
+            "var card=document.getElementById('waiting-display');if(!card)return;" +
+            "var title=card.querySelector('h1'),detail=card.querySelector('.subtext');" +
+            "if(title)title.textContent='Scan here to get rewards';" +
+            "if(detail)detail.textContent=\"Show your wallet's Lightning address QR to the camera above, then pay as usual.\";" +
+            "})()", null);
+    }
+
     private void showInlineRewardsScanner(boolean rewardVisible) {
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         rewardsScannerPanel.setVisibility(View.VISIBLE);
@@ -386,8 +399,8 @@ public class MainActivity extends Activity {
         rewardsScannerPanel.setLayoutParams(params);
         inlineRewardsScanner.setStatusText("");
         setRewardsScannerStatus(rewardVisible
-            ? "Scanner ready for next customer"
-            : "Scan wallet Lightning address QR");
+            ? "Next customer: show wallet QR"
+            : "Show wallet QR to camera");
         if (!inlineScannerRunning) {
             configureInlineRewardsCamera();
             inlineRewardsScanner.decodeContinuous(inlineRewardsCallback);

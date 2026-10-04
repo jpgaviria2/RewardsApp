@@ -1,5 +1,5 @@
-# Rewards NFC Display 2.12.2
+# Rewards NFC Display 2.12.3
 
-- Fixes BTCPay login-code flow so after authentication the kiosk returns to the configured Bitcoin Rewards display instead of landing on the BTCPay store dashboard.
-- Keeps the app locked to `/plugins/bitcoin-rewards/{storeId}/display` after successful login while still allowing the BTCPay login page during authentication.
-- Preserves the v2.12.1 scanner/display layout and Trails-style customer claim UI.
+- Makes the customer-facing waiting screen say “Scan here to get rewards” and explains that customers should show their wallet's Lightning address QR to the camera before paying.
+- Rewords the native scanner prompt to “Show wallet QR to camera.”
+- Leaves the reward-ready and checked-in states unchanged.
