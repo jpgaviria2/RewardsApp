@@ -24,16 +24,30 @@ public class TokenSecurityTest {
         assertTrue(source.contains("SecureTokenStore"));
     }
 
-    @Test public void legacyCredentialsAndCookiesArePurgedBeforeEitherActivityEnablesUi() throws Exception {
+    @Test public void legacyMigrationKeepsOnlyDisplayConfigurationAndDoesNotDestroyCookies() throws Exception {
+        String migration=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/LegacyCredentialMigration.java")),StandardCharsets.UTF_8);
         String purge=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/LegacyCredentialPurge.java")),StandardCharsets.UTF_8);
         String main=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java")),StandardCharsets.UTF_8);
         String settings=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java")),StandardCharsets.UTF_8);
-        assertTrue(purge.contains("legacy_credential_purge_pending_v2"));
-        assertTrue(purge.contains("password")); assertTrue(purge.contains("api_key"));
-        assertTrue(purge.contains("session_cookies")); assertTrue(purge.contains("removeAllCookies"));
+        assertTrue(migration.contains("legacy_display_migration_complete_v3"));
+        assertTrue(migration.contains("btcpay_url")); assertTrue(migration.contains("store_id"));
+        assertTrue(migration.contains("password")); assertTrue(migration.contains("api_key")); assertTrue(migration.contains("session_cookies"));
+        assertTrue(migration.contains("commit()")); assertFalse(migration.contains("apply()"));
+        assertFalse(migration.contains("removeAllCookies")); assertFalse(purge.contains("removeAllCookies"));
         assertTrue(main.indexOf("LegacyCredentialPurge.run") < main.indexOf("setContentView"));
         assertTrue(settings.indexOf("LegacyCredentialPurge.run") < settings.indexOf("setContentView"));
-        assertTrue(main.contains("configurationUsable(this)"));
+        assertTrue(main.contains("displayConfigurationUsable(this)"));
+        assertTrue(main.contains("scannerConfigurationUsable(this)"));
+    }
+
+    @Test public void oneTimeLoginCodeUsesProcessMemoryAndNeverIntentOrPreferences() throws Exception {
+        String main=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java")),StandardCharsets.UTF_8);
+        String settings=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java")),StandardCharsets.UTF_8);
+        assertTrue(settings.contains("OneTimeLoginHandoff.publish(loginUrl)"));
+        assertTrue(main.contains("OneTimeLoginHandoff.consume()"));
+        assertFalse(settings.contains("putExtra(MainActivity"));
+        assertFalse(main.contains("getStringExtra"));
+        assertTrue(main.contains("isTrustedLoginUrl"));
     }
 
     @Test public void secureTokenStoreSupportsLegacyAndroidKeystoreOrFailsOnlyOnActualErrors() throws Exception {

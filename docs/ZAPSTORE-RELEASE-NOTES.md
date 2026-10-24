@@ -1,7 +1,8 @@
-# Rewards NFC Display 2.13.0
+# Rewards NFC Display 2.13.1
 
-- Adds standards-compliant LNURL-pay QR scanning to the existing Lightning-address rewards workflow.
-- Strictly validates LNURL Bech32 payloads and decoded HTTPS destinations before submitting a check-in.
-- Preserves scan evidence and displays a destination label derived locally from the scanned QR.
-- Keeps the existing server-authoritative reward amount, confirmation, retry, cancellation, and terminal-status flow.
-- Preserves Lightning-address scanning while canonicalizing its server-facing value for reliable correlation.
+- Restores native scanning of short-lived BTCPay Login Codes for display authentication.
+- Accepts BTCPay login URL QR payloads and the legacy `code;baseUrl` format while requiring HTTPS and the configured server origin.
+- Never stores the one-time login code and ignores QR-provided return targets; the rewards display URL is constructed locally from the trusted server and Store ID.
+- Separates display readiness from optional scoped rewards-scanner provisioning, so the display can launch and authenticate without scanner credentials.
+- Preserves the WebView cookie session and replaces destructive legacy cleanup with migration of only the non-secret BTCPay URL and Store ID.
+- Keeps rewards-scanner device tokens isolated in Android secure storage and prompts for provisioning only when scanner functions are opened.

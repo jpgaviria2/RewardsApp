@@ -1,13 +1,123 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#1a1a2e" android:padding="32dp">
- <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-  <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Rewards scanner setup" android:textColor="#ffffff" android:textSize="28sp" android:textStyle="bold" android:layout_marginBottom="24dp"/>
-  <EditText android:id="@+id/input_btcpay_url" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="https://btcpay.example" android:inputType="textUri" android:textColor="#ffffff" android:textColorHint="#8888aa"/>
-  <EditText android:id="@+id/input_store_id" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Store ID" android:textColor="#ffffff" android:textColorHint="#8888aa"/>
-  <EditText android:id="@+id/input_check_in_device_id" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Provisioned scanner device ID" android:textColor="#ffffff" android:textColorHint="#8888aa"/>
-  <EditText android:id="@+id/input_check_in_token" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Scoped scanner token (leave blank to keep)" android:inputType="textPassword" android:textColor="#ffffff" android:textColorHint="#8888aa"/>
-  <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="The token must be scoped to rewards check-in and confirmation. Secure token storage supports Android 4.4 or newer and fails closed if the device keystore is unavailable." android:textColor="#aaaacc" android:layout_marginTop="8dp" android:layout_marginBottom="20dp"/>
-  <Button android:id="@+id/btn_save" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Save securely"/>
-  <TextView android:id="@+id/status_text" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#ffaaaa" android:layout_marginTop="12dp"/>
- </LinearLayout>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1a1a2e"
+    android:padding="32dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Rewards display setup"
+            android:textColor="#ffffff"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Display login"
+            android:textColor="#ffffff"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/input_btcpay_url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="https://btcpay.example"
+            android:inputType="textUri"
+            android:textColor="#ffffff"
+            android:textColorHint="#8888aa" />
+
+        <EditText
+            android:id="@+id/input_store_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Store ID"
+            android:textColor="#ffffff"
+            android:textColorHint="#8888aa" />
+
+        <Button
+            android:id="@+id/btn_scan_login_code"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scan BTCPay login QR"
+            android:textAllCaps="false"
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="The short-lived login code is used once in the display WebView and is never saved. QR return targets are ignored; the destination is built from the HTTPS server and Store ID above."
+            android:textColor="#aaaacc"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save &amp; launch display"
+            android:textAllCaps="false" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Optional rewards scanner provisioning"
+            android:textColor="#ffffff"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="28dp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/input_check_in_device_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Provisioned scanner device ID"
+            android:textColor="#ffffff"
+            android:textColorHint="#8888aa" />
+
+        <EditText
+            android:id="@+id/input_check_in_token"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Scoped scanner token (leave blank to keep)"
+            android:inputType="textPassword"
+            android:textColor="#ffffff"
+            android:textColorHint="#8888aa" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="The scanner token must be scoped to rewards check-in and confirmation. It is separate from the display login session. Secure token storage supports Android 4.4 or newer and fails closed if the device keystore is unavailable."
+            android:textColor="#aaaacc"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btn_save_scanner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save scanner provisioning"
+            android:textAllCaps="false" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#ffaaaa"
+            android:visibility="gone"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="24dp" />
+    </LinearLayout>
 </ScrollView>
