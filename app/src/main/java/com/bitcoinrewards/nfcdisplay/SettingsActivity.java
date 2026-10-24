@@ -176,6 +176,17 @@ public class SettingsActivity extends Activity {
         catch (Exception e) { return null; }
     }
 
+    static String getLegacyCheckInUrl(Context c) {
+        try { return buildLegacyCheckInUrl(getBtcpayUrl(c), getStoreId(c)); }
+        catch (Exception e) { return null; }
+    }
+
+    static String buildLegacyCheckInUrl(String origin, String storeId) {
+        PendingOperation.validateText(storeId, 256);
+        if (storeId == null || storeId.isEmpty()) throw new IllegalArgumentException();
+        return ApiOrigin.requireConfigured(origin).toString() + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(storeId) + "/check-in/api";
+    }
+
     private static String buildDisplayUrl(String origin, String storeId) {
         return ApiOrigin.requireConfigured(origin).toString() + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(storeId) + "/display";
     }

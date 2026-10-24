@@ -37,7 +37,9 @@ public class TokenSecurityTest {
         assertTrue(main.indexOf("LegacyCredentialPurge.run") < main.indexOf("setContentView"));
         assertTrue(settings.indexOf("LegacyCredentialPurge.run") < settings.indexOf("setContentView"));
         assertTrue(main.contains("displayConfigurationUsable(this)"));
-        assertTrue(main.contains("scannerConfigurationUsable(this)"));
+        assertFalse(main.contains("scannerConfigurationUsable(this)"));
+        assertTrue(settings.contains("scannerConfigurationUsable(this)"));
+        assertFalse(main.contains("getCheckInToken"));
     }
 
     @Test public void oneTimeLoginCodeUsesProcessMemoryAndNeverIntentOrPreferences() throws Exception {
