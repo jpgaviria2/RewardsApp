@@ -2,766 +2,210 @@ package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.Toast;
-import android.content.Intent;
-import android.os.AsyncTask;
-import android.util.Log;
 
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.net.URLDecoder;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.util.List;
-import java.util.Map;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-/**
- * Settings/Onboarding screen for configuring the BTCPay rewards display.
- * 
- * Authentication flow:
- * 1. User enters BTCPay URL + email + password
- * 2. App creates a Greenfield API key via POST /api/v1/api-keys 
- *    (using Basic auth with email:password)
- * 3. API key is stored in SharedPreferences
- * 4. App fetches available stores via GET /api/v1/stores
- * 5. User selects store (or auto-selects if only one)
- * 6. WebView loads display page using cookie session from login
- * 
- * The display page requires CanViewStoreSettings policy — 
- * this is NOT publicly accessible. Authentication is required.
- */
 public class SettingsActivity extends Activity {
-    private static final String TAG = "RewardsSettings";
     private static final int LOGIN_CODE_SCAN_REQUEST = 4401;
-    public static final String PREFS_NAME = "RewardsNfcPrefs";
-    public static final String KEY_BTCPAY_URL = "btcpay_url";
-    public static final String KEY_STORE_ID = "store_id";
-    public static final String KEY_STORE_NAME = "store_name";
-    public static final String KEY_API_KEY = "api_key";
-    public static final String KEY_EMAIL = "email";
-    public static final String KEY_PASSWORD = "password";
-    public static final String KEY_AUTH_METHOD = "auth_method";
-    public static final String KEY_SESSION_COOKIES = "session_cookies";
-    public static final String AUTH_METHOD_PASSWORD = "password";
-    public static final String AUTH_METHOD_LOGIN_CODE = "login_code";
-    public static final String KEY_REFRESH_SECONDS = "refresh_seconds";
-    public static final String KEY_NFC_ENABLED = "nfc_enabled";
-    public static final String KEY_ONBOARDED = "onboarded";
+    static final String PREFS_NAME = "rewards_nfc_prefs";
+    static final String KEY_BTCPAY_URL = "btcpay_url", KEY_STORE_ID = "store_id", KEY_CHECK_IN_DEVICE_ID = "check_in_device_id";
+    static final String KEY_TOKEN_FINGERPRINT = "scanner_token_fingerprint", KEY_TOKEN_GENERATION = "scanner_token_generation", KEY_ONBOARDED = "onboarded";
+    static final String KEY_CREDENTIAL_UPDATE_PENDING = "credential_update_pending";
 
-    private EditText inputUrl;
-    private EditText inputStoreId;
-    private EditText inputLoginCode;
-    private EditText inputEmail;
-    private EditText inputPassword;
-    private EditText inputRefreshSeconds;
-    private Switch switchNfc;
-    private Button btnConnect;
-    private TextView statusText;
-    private View storeSection;
-    private TextView storeInfo;
-    private Button btnSave;
+    private EditText url, store, device, token;
+    private TextView status;
 
-    // Stores fetched from API
-    private String apiKey = null;
-    private String selectedStoreId = null;
-    private String selectedStoreName = null;
-    private JSONArray availableStores = null;
-    private int currentStoreIndex = 0;
-    private String loginCodeSessionCookies = "";
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        LegacyCredentialPurge.run(this, () -> initialize(state));
+    }
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    private void initialize(Bundle state) {
         setContentView(R.layout.activity_settings);
+        SharedPreferences p = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        url = findViewById(R.id.input_btcpay_url);
+        store = findViewById(R.id.input_store_id);
+        device = findViewById(R.id.input_check_in_device_id);
+        token = findViewById(R.id.input_check_in_token);
+        status = findViewById(R.id.status_text);
+        url.setText(p.getString(KEY_BTCPAY_URL, ""));
+        store.setText(p.getString(KEY_STORE_ID, ""));
+        device.setText(p.getString(KEY_CHECK_IN_DEVICE_ID, ""));
 
-        inputUrl = findViewById(R.id.input_btcpay_url);
-        inputStoreId = findViewById(R.id.input_store_id);
-        inputLoginCode = findViewById(R.id.input_login_code);
-        inputEmail = findViewById(R.id.input_email);
-        inputPassword = findViewById(R.id.input_password);
-        inputRefreshSeconds = findViewById(R.id.input_refresh_seconds);
-        switchNfc = findViewById(R.id.switch_nfc_enabled);
-        btnConnect = findViewById(R.id.btn_connect);
-        statusText = findViewById(R.id.status_text);
-        storeSection = findViewById(R.id.store_section);
-        storeInfo = findViewById(R.id.store_info);
-        btnSave = findViewById(R.id.btn_save);
-        Button btnCycleStore = findViewById(R.id.btn_cycle_store);
+        Button scanLogin = findViewById(R.id.btn_scan_login_code);
+        scanLogin.setOnClickListener(v -> startActivityForResult(new Intent(this, LoginCodeScanActivity.class), LOGIN_CODE_SCAN_REQUEST));
+        Button saveDisplay = findViewById(R.id.btn_save);
+        saveDisplay.setOnClickListener(v -> saveDisplayAndLaunch());
+        Button saveScanner = findViewById(R.id.btn_save_scanner);
+        saveScanner.setOnClickListener(v -> saveScannerProvisioning());
 
-        // Load existing settings
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        inputUrl.setText(prefs.getString(KEY_BTCPAY_URL, ""));
-        inputStoreId.setText(prefs.getString(KEY_STORE_ID, ""));
-        inputEmail.setText(prefs.getString(KEY_EMAIL, ""));
-        inputRefreshSeconds.setText(String.valueOf(prefs.getInt(KEY_REFRESH_SECONDS, 10)));
-        switchNfc.setChecked(prefs.getBoolean(KEY_NFC_ENABLED, true));
-
-        // If already configured, show store info
-        String existingStoreId = prefs.getString(KEY_STORE_ID, "");
-        String existingStoreName = prefs.getString(KEY_STORE_NAME, "");
-        String existingApiKey = prefs.getString(KEY_API_KEY, "");
-        if (!existingStoreId.isEmpty() && !existingApiKey.isEmpty()) {
-            apiKey = existingApiKey;
-            selectedStoreId = existingStoreId;
-            selectedStoreName = existingStoreName;
-            storeSection.setVisibility(View.VISIBLE);
-            storeInfo.setText("✅ " + (existingStoreName.isEmpty() ? existingStoreId : existingStoreName));
-            btnSave.setVisibility(View.VISIBLE);
-        }
-
-        btnConnect.setOnClickListener(v -> connectToBtcPay());
-        Button btnLoginCode = findViewById(R.id.btn_login_code);
-        if (btnLoginCode != null) {
-            btnLoginCode.setOnClickListener(v -> loginWithCode());
-        }
-        Button btnScanLoginCode = findViewById(R.id.btn_scan_login_code);
-        if (btnScanLoginCode != null) {
-            btnScanLoginCode.setOnClickListener(v -> saveAndLaunchWebLogin());
-        }
-        btnSave.setOnClickListener(v -> saveAndLaunch());
-        if (btnCycleStore != null) {
-            btnCycleStore.setOnClickListener(v -> cycleStore());
+        if (getIntent().getBooleanExtra("show_scanner_provisioning", false)) {
+            status.setText("Provision a scoped rewards-scanner device ID and token below. Display login remains separate.");
+            status.setVisibility(View.VISIBLE);
+            getIntent().removeExtra("show_scanner_provisioning");
         }
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == LOGIN_CODE_SCAN_REQUEST && resultCode == RESULT_OK && data != null) {
-            String payload = data.getStringExtra(LoginCodeScanActivity.EXTRA_LOGIN_CODE_PAYLOAD);
-            applyLoginCodePayload(payload);
-            loginWithCode();
-        }
-    }
-
-    private void connectToBtcPay() {
-        String url = inputUrl.getText().toString().trim();
-        String email = inputEmail.getText().toString().trim();
-        String password = inputPassword.getText().toString().trim();
-
-        if (url.isEmpty()) {
-            inputUrl.setError("Required");
-            return;
-        }
-        if (looksLikeStoreId(url)) {
-            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
-            if (inputStoreId != null && inputStoreId.getText().toString().trim().isEmpty()) {
-                inputStoreId.setText(url);
-            }
-            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
-            statusText.setVisibility(View.VISIBLE);
-            return;
-        }
-        if (email.isEmpty()) {
-            inputEmail.setError("Required");
-            return;
-        }
-        if (password.isEmpty()) {
-            inputPassword.setError("Required");
-            return;
-        }
-
-        // Clean URL
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://" + url;
-        }
-        if (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-
-        btnConnect.setEnabled(false);
-        btnConnect.setText("Connecting...");
-        statusText.setText("🔄 Creating API key...");
-        statusText.setVisibility(View.VISIBLE);
-
-        final String finalUrl = url;
-        new ConnectTask().execute(finalUrl, email, password);
-    }
-
-    private void applyLoginCodePayload(String payload) {
-        if (payload == null) return;
-        String raw = payload.trim();
-        if (raw.isEmpty()) return;
-
-        String scannedUrl = extractServerUrl(raw);
-        if (!scannedUrl.isEmpty()) {
-            inputUrl.setText(scannedUrl);
-        }
-
-        String scannedStoreId = extractStoreId(raw);
-        if (!scannedStoreId.isEmpty()) {
-            inputStoreId.setText(scannedStoreId);
-        }
-
-        String scannedCode = extractLoginCode(raw);
-        inputLoginCode.setText(scannedCode);
-        statusText.setText(scannedStoreId.isEmpty()
-            ? "✅ Login QR scanned. Logging in and detecting stores..."
-            : "✅ Login QR scanned with store ID. Logging in...");
-        statusText.setVisibility(View.VISIBLE);
-    }
-
-    private static String extractLoginCode(String raw) {
-        if (raw == null) return "";
-        String value = raw.trim();
-        if (value.isEmpty()) return "";
-
+        if (requestCode != LOGIN_CODE_SCAN_REQUEST || resultCode != RESULT_OK) return;
+        String raw = OneTimeLoginHandoff.consume();
         try {
-            if (value.startsWith("http://") || value.startsWith("https://")) {
-                URL parsed = new URL(value);
-                String query = parsed.getQuery();
-                if (query != null) {
-                    for (String part : query.split("&")) {
-                        int equals = part.indexOf('=');
-                        String key = equals >= 0 ? part.substring(0, equals) : part;
-                        String val = equals >= 0 ? part.substring(equals + 1) : "";
-                        if ("loginCode".equalsIgnoreCase(URLDecoder.decode(key, "UTF-8"))) {
-                            return URLDecoder.decode(val, "UTF-8").trim();
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) { }
-
-        int semicolon = value.indexOf(';');
-        if (semicolon > 0) {
-            return value.substring(0, semicolon).trim();
-        }
-        return value;
-    }
-
-    private static String extractServerUrl(String raw) {
-        if (raw == null) return "";
-        String value = raw.trim();
-        if (value.isEmpty()) return "";
-
-        try {
-            if (value.startsWith("http://") || value.startsWith("https://")) {
-                URL parsed = new URL(value);
-                return parsed.getProtocol() + "://" + parsed.getHost() + (parsed.getPort() > 0 ? ":" + parsed.getPort() : "");
-            }
-        } catch (Exception ignored) { }
-
-        String[] parts = value.split(";", 3);
-        if (parts.length >= 2 && (parts[1].startsWith("http://") || parts[1].startsWith("https://"))) {
-            return normalizeUrl(parts[1]);
-        }
-        return "";
-    }
-
-    private static String extractStoreId(String raw) {
-        if (raw == null) return "";
-        String value = raw.trim();
-        if (value.isEmpty()) return "";
-
-        try {
-            String returnUrl = "";
-            if (value.startsWith("http://") || value.startsWith("https://")) {
-                URL parsed = new URL(value);
-                String query = parsed.getQuery();
-                if (query != null) {
-                    for (String part : query.split("&")) {
-                        int equals = part.indexOf('=');
-                        String key = equals >= 0 ? part.substring(0, equals) : part;
-                        String val = equals >= 0 ? part.substring(equals + 1) : "";
-                        if ("returnUrl".equalsIgnoreCase(URLDecoder.decode(key, "UTF-8"))) {
-                            returnUrl = URLDecoder.decode(val, "UTF-8");
-                            break;
-                        }
-                    }
-                }
-                if (returnUrl.isEmpty()) returnUrl = parsed.getPath();
-            } else {
-                String[] parts = value.split(";", 3);
-                if (parts.length >= 2) returnUrl = parts[1];
-            }
-
-            java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("/plugins/bitcoin-rewards/([^/]+)/")
-                .matcher(returnUrl);
-            if (matcher.find()) {
-                return matcher.group(1);
-            }
-        } catch (Exception ignored) { }
-        return "";
-    }
-
-    private void loginWithCode() {
-        String url = normalizeUrl(inputUrl.getText().toString().trim());
-        String storeId = inputStoreId.getText().toString().trim();
-        String loginCodePayload = inputLoginCode.getText().toString().trim();
-        String loginCode = extractLoginCode(loginCodePayload);
-
-        if (url.isEmpty()) {
-            inputUrl.setError("Required");
-            return;
-        }
-        if (looksLikeStoreId(url)) {
-            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
-            if (inputStoreId != null && inputStoreId.getText().toString().trim().isEmpty()) {
-                inputStoreId.setText(url);
-            }
-            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
-            statusText.setVisibility(View.VISIBLE);
-            return;
-        }
-        if (loginCode.isEmpty()) {
-            inputLoginCode.setError("Required");
-            return;
-        }
-
-        selectedStoreId = storeId;
-        selectedStoreName = storeId;
-        apiKey = null;
-
-        btnConnect.setEnabled(false);
-        statusText.setText("🔄 Logging in with BTCPay code...");
-        statusText.setVisibility(View.VISIBLE);
-        new LoginCodeTask().execute(url, storeId, loginCode);
-    }
-
-    private static String normalizeUrl(String url) {
-        if (url == null) return "";
-        url = url.trim();
-        if (url.isEmpty()) return "";
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://" + url;
-        }
-        while (url.endsWith("/")) {
-            url = url.substring(0, url.length() - 1);
-        }
-        return url;
-    }
-
-    private static boolean looksLikeStoreId(String value) {
-        if (value == null) return false;
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) return false;
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return false;
-        if (trimmed.contains(".") || trimmed.contains(":")) return false;
-        return trimmed.length() >= 30 && trimmed.matches("[A-Za-z0-9_-]+");
-    }
-
-    private class LoginCodeTask extends AsyncTask<String, String, String> {
-        private String serverUrl;
-        private String storeId;
-        private String error;
-        private final java.util.ArrayList<String> sessionCookies = new java.util.ArrayList<>();
-
-        @Override
-        protected String doInBackground(String... params) {
-            serverUrl = params[0];
-            storeId = params[1];
-            String loginCode = params[2];
-            try {
-                publishProgress("Exchanging login code...");
-                String returnUrl = storeId == null || storeId.isEmpty()
-                    ? "/stores"
-                    : "/plugins/bitcoin-rewards/" + URLEncoder.encode(storeId, "UTF-8") + "/display";
-                URL codeUrl = new URL(serverUrl + "/login?loginCode=" + URLEncoder.encode(loginCode, "UTF-8") + "&returnUrl=" + URLEncoder.encode(returnUrl, "UTF-8"));
-                HttpURLConnection conn = (HttpURLConnection) codeUrl.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(15000);
-
-                int code = conn.getResponseCode();
-                String location = conn.getHeaderField("Location");
-                Log.i(TAG, "Login code exchange returned HTTP " + code + " location=" + (location == null ? "" : location));
-                Map<String, List<String>> headers = conn.getHeaderFields();
-                if (headers != null) {
-                    for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-                        if (entry.getKey() != null && entry.getKey().equalsIgnoreCase("Set-Cookie")) {
-                            sessionCookies.addAll(entry.getValue());
-                        }
-                    }
-                }
-                if (code == 200) {
-                    error = "BTCPay did not accept the login code. Generate a fresh code and scan it immediately.";
-                    return null;
-                }
-
-                if ((code == 302 || code == 303) && !sessionCookies.isEmpty()) {
-                    if (storeId == null || storeId.isEmpty()) {
-                        publishProgress("Finding stores...");
-                        if (!fetchStoresWithSessionCookies()) {
-                            error = "Login accepted, but the app could not auto-detect a store. Enter Store ID once, or scan a login QR generated from the store display/settings page.";
-                            return null;
-                        }
-                    }
-                    return "OK";
-                }
-                error = code == 0 ? "No response from BTCPay" : "Login code failed (HTTP " + code + "). Generate a fresh code and try again.";
-                return null;
-            } catch (javax.net.ssl.SSLHandshakeException e) {
-                error = "HTTPS certificate is not trusted by Android. Use the public BTCPay domain with a trusted certificate.";
-                return null;
-            } catch (Exception e) {
-                error = "Login code failed: " + e.getMessage();
-                Log.e(TAG, "Login code error", e);
-                return null;
-            }
-        }
-
-        private boolean fetchStoresWithSessionCookies() {
-            try {
-                URL storesUrl = new URL(serverUrl + "/api/v1/stores");
-                HttpURLConnection storesConn = (HttpURLConnection) storesUrl.openConnection();
-                storesConn.setRequestMethod("GET");
-                storesConn.setRequestProperty("Accept", "application/json");
-                storesConn.setRequestProperty("Cookie", buildCookieHeader());
-                storesConn.setConnectTimeout(15000);
-                storesConn.setReadTimeout(15000);
-
-                int storesCode = storesConn.getResponseCode();
-                if (storesCode != 200) return false;
-
-                BufferedReader storesReader = new BufferedReader(new InputStreamReader(storesConn.getInputStream()));
-                StringBuilder storesBody = new StringBuilder();
-                String storesLine;
-                while ((storesLine = storesReader.readLine()) != null) storesBody.append(storesLine);
-                storesReader.close();
-
-                JSONArray stores = new JSONArray(storesBody.toString());
-                if (stores.length() == 0) return false;
-
-                availableStores = stores;
-                currentStoreIndex = 0;
-                JSONObject firstStore = stores.getJSONObject(0);
-                storeId = firstStore.getString("id");
-                selectedStoreId = storeId;
-                selectedStoreName = firstStore.optString("name", selectedStoreId);
-                inputStoreId.setText(storeId);
-                return true;
-            } catch (Exception e) {
-                Log.e(TAG, "Store auto-detect failed", e);
-                return false;
-            }
-        }
-
-        private String buildCookieHeader() {
-            StringBuilder header = new StringBuilder();
-            for (String cookie : sessionCookies) {
-                if (cookie == null || cookie.isEmpty()) continue;
-                String firstPart = cookie.split(";", 2)[0];
-                if (firstPart.isEmpty()) continue;
-                if (header.length() > 0) header.append("; ");
-                header.append(firstPart);
-            }
-            return header.toString();
-        }
-
-        private String buildSetCookieLines() {
-            StringBuilder lines = new StringBuilder();
-            for (String cookie : sessionCookies) {
-                if (cookie == null || cookie.isEmpty()) continue;
-                if (lines.length() > 0) lines.append("\n");
-                lines.append(cookie);
-            }
-            return lines.toString();
-        }
-
-        @Override
-        protected void onProgressUpdate(String... values) {
-            statusText.setText("🔄 " + values[0]);
-        }
-
-        @Override
-        protected void onPostExecute(String result) {
-            btnConnect.setEnabled(true);
-            if (result != null) {
-                android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
-                String cookieLines = buildSetCookieLines();
-                for (String cookie : sessionCookies) {
-                    cookieManager.setCookie(serverUrl, cookie);
-                }
-                cookieManager.flush();
-                loginCodeSessionCookies = cookieLines;
-                statusText.setText("✅ Login code accepted. Launching display...");
-                storeSection.setVisibility(View.VISIBLE);
-                storeInfo.setText("🏪 " + storeId);
-                btnSave.setVisibility(View.GONE);
-                saveAndLaunch();
-            } else {
-                statusText.setText("❌ " + error);
-                storeSection.setVisibility(View.GONE);
-                btnSave.setVisibility(View.GONE);
-            }
-        }
-    }
-
-    private class ConnectTask extends AsyncTask<String, String, String> {
-        private String serverUrl;
-        private String error;
-
-        @Override
-        protected String doInBackground(String... params) {
-            serverUrl = params[0];
-            String email = params[1];
-            String password = params[2];
-
-            try {
-                // Step 1: Create API key via Basic auth
-                publishProgress("Creating API key...");
-                String credentials = android.util.Base64.encodeToString(
-                    (email + ":" + password).getBytes("UTF-8"),
-                    android.util.Base64.NO_WRAP
-                );
-
-                URL apiKeyUrl = new URL(serverUrl + "/api/v1/api-keys");
-                HttpURLConnection conn = (HttpURLConnection) apiKeyUrl.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Authorization", "Basic " + credentials);
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-
-                String body = "{\"label\":\"Rewards NFC Display\",\"permissions\":[\"btcpay.store.canviewstoresettings\"]}";
-                OutputStream os = conn.getOutputStream();
-                os.write(body.getBytes("UTF-8"));
-                os.flush();
-                os.close();
-
-                int code = conn.getResponseCode();
-                if (code != 200) {
-                    BufferedReader errReader = new BufferedReader(new InputStreamReader(conn.getErrorStream()));
-                    StringBuilder errBody = new StringBuilder();
-                    String line;
-                    while ((line = errReader.readLine()) != null) errBody.append(line);
-                    errReader.close();
-
-                    if (code == 401) {
-                        error = "Password login failed. If BTCPay has 2FA/passkeys enabled, use Scan BTCPay Login QR instead.";
-                    } else {
-                        error = "API error (" + code + "): " + errBody.toString();
-                    }
-                    return null;
-                }
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder responseBody = new StringBuilder();
-                String responseLine;
-                while ((responseLine = reader.readLine()) != null) responseBody.append(responseLine);
-                reader.close();
-
-                JSONObject keyResponse = new JSONObject(responseBody.toString());
-                String newApiKey = keyResponse.getString("apiKey");
-
-                // Step 2: Fetch stores
-                publishProgress("Fetching stores...");
-                URL storesUrl = new URL(serverUrl + "/api/v1/stores");
-                HttpURLConnection storesConn = (HttpURLConnection) storesUrl.openConnection();
-                storesConn.setRequestProperty("Authorization", "token " + newApiKey);
-
-                int storesCode = storesConn.getResponseCode();
-                if (storesCode != 200) {
-                    error = "Failed to fetch stores (code " + storesCode + ")";
-                    return null;
-                }
-
-                BufferedReader storesReader = new BufferedReader(new InputStreamReader(storesConn.getInputStream()));
-                StringBuilder storesBody = new StringBuilder();
-                String storesLine;
-                while ((storesLine = storesReader.readLine()) != null) storesBody.append(storesLine);
-                storesReader.close();
-
-                JSONArray stores = new JSONArray(storesBody.toString());
-                if (stores.length() == 0) {
-                    error = "No stores found for this account";
-                    return null;
-                }
-
-                // Store results
-                apiKey = newApiKey;
-                availableStores = stores;
-                currentStoreIndex = 0;
-
-                JSONObject firstStore = stores.getJSONObject(0);
-                selectedStoreId = firstStore.getString("id");
-                selectedStoreName = firstStore.optString("name", selectedStoreId);
-
-                return "OK";
-
-            } catch (Exception e) {
-                error = "Connection failed: " + e.getMessage();
-                Log.e(TAG, "Connect error", e);
-                return null;
-            }
-        }
-
-        @Override
-        protected void onProgressUpdate(String... values) {
-            statusText.setText("🔄 " + values[0]);
-        }
-
-        @Override
-        protected void onPostExecute(String result) {
-            btnConnect.setEnabled(true);
-            btnConnect.setText("Connect");
-
-            if (result != null) {
-                statusText.setText("✅ Connected! " + availableStores.length() + " store(s) found");
-                storeSection.setVisibility(View.VISIBLE);
-                updateStoreDisplay();
-                btnSave.setVisibility(View.VISIBLE);
-            } else {
-                statusText.setText("❌ " + error);
-                storeSection.setVisibility(View.GONE);
-                btnSave.setVisibility(View.GONE);
-            }
-        }
-    }
-
-    private void updateStoreDisplay() {
-        if (availableStores != null && availableStores.length() > 0) {
-            String display = selectedStoreName;
-            if (availableStores.length() > 1) {
-                display += " (" + (currentStoreIndex + 1) + "/" + availableStores.length() + ")";
-            }
-            storeInfo.setText("🏪 " + display);
-        }
-    }
-
-    private void cycleStore() {
-        if (availableStores == null || availableStores.length() <= 1) return;
-        currentStoreIndex = (currentStoreIndex + 1) % availableStores.length();
-        try {
-            JSONObject store = availableStores.getJSONObject(currentStoreIndex);
-            selectedStoreId = store.getString("id");
-            selectedStoreName = store.optString("name", selectedStoreId);
-            updateStoreDisplay();
+            String configured = url.getText().toString().trim();
+            LoginCodePayloadParser.ParsedPayload parsed = LoginCodePayloadParser.parse(raw, configured);
+            raw = null;
+            url.setText(parsed.origin);
+            String origin = persistDisplayConfiguration(parsed.origin, store.getText().toString());
+            String displayUrl = buildDisplayUrl(origin, store.getText().toString().trim());
+            String loginUrl = LoginCodePayloadParser.buildTrustedLoginUrl(parsed, displayUrl);
+            OneTimeLoginHandoff.publish(loginUrl);
+            Intent main = new Intent(this, MainActivity.class);
+            // MainActivity uses the standard launch mode, so CLEAR_TOP replaces any stale expired instance.
+            main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(main);
+            finish();
         } catch (Exception e) {
-            Log.e(TAG, "Error cycling store", e);
+            status.setText("Login QR rejected. Use a fresh HTTPS BTCPay login QR for the configured server and enter the Store ID.");
+            status.setVisibility(View.VISIBLE);
         }
     }
 
-    private void saveAndLaunchWebLogin() {
-        String url = normalizeUrl(inputUrl.getText().toString());
-        String storeId = inputStoreId.getText().toString().trim();
-        if (url.isEmpty()) {
-            inputUrl.setError("Required");
-            return;
-        }
-        if (looksLikeStoreId(url)) {
-            inputUrl.setError("Enter the BTCPay server URL here, not the store ID");
-            if (storeId.isEmpty()) inputStoreId.setText(url);
-            statusText.setText("❌ Put your BTCPay URL here, e.g. https://btcpay.example.com. The long store ID belongs in Store ID.");
-            statusText.setVisibility(View.VISIBLE);
-            return;
-        }
-        if (storeId.isEmpty()) {
-            inputStoreId.setError("Required for BTCPay web login");
-            statusText.setText("❌ Enter Store ID once so BTCPay can return to the rewards display after login.");
-            statusText.setVisibility(View.VISIBLE);
-            return;
-        }
-        selectedStoreId = storeId;
-        selectedStoreName = storeId;
-        apiKey = null;
-        loginCodeSessionCookies = "";
-        statusText.setText("🔄 Opening BTCPay login scanner...");
-        statusText.setVisibility(View.VISIBLE);
-        saveAndLaunch();
-    }
-
-    private void saveAndLaunch() {
-        String url = normalizeUrl(inputUrl.getText().toString());
-
-        String refreshStr = inputRefreshSeconds.getText().toString().trim();
-        int refreshSeconds = 10;
+    private void saveDisplayAndLaunch() {
         try {
-            refreshSeconds = Integer.parseInt(refreshStr);
-            if (refreshSeconds < 3) refreshSeconds = 3;
-            if (refreshSeconds > 300) refreshSeconds = 300;
-        } catch (NumberFormatException ignored) {}
-
-        // Save everything
-        SharedPreferences.Editor editor = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
-        editor.putString(KEY_BTCPAY_URL, url);
-        editor.putString(KEY_EMAIL, inputEmail.getText().toString().trim());
-        editor.putString(KEY_PASSWORD, inputPassword.getText().toString());
-        editor.putString(KEY_STORE_ID, selectedStoreId);
-        editor.putString(KEY_STORE_NAME, selectedStoreName);
-        editor.putString(KEY_API_KEY, apiKey == null ? "" : apiKey);
-        editor.putString(KEY_AUTH_METHOD, apiKey == null ? AUTH_METHOD_LOGIN_CODE : AUTH_METHOD_PASSWORD);
-        editor.putString(KEY_SESSION_COOKIES, apiKey == null ? loginCodeSessionCookies : "");
-        editor.putInt(KEY_REFRESH_SECONDS, refreshSeconds);
-        editor.putBoolean(KEY_NFC_ENABLED, switchNfc.isChecked());
-        editor.putBoolean(KEY_ONBOARDED, true);
-        editor.apply();
-
-        Toast.makeText(this, "Settings saved!", Toast.LENGTH_SHORT).show();
-
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        startActivity(intent);
-        finish();
+            persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            startActivity(new Intent(this, MainActivity.class));
+            finish();
+        } catch (Exception e) {
+            status.setText("Enter a valid HTTPS BTCPay server URL and Store ID.");
+            status.setVisibility(View.VISIBLE);
+        }
     }
 
-    public static boolean isOnboarded(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_ONBOARDED, false);
+    private void saveScannerProvisioning() {
+        try {
+            String origin = persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            String storeId = store.getText().toString().trim();
+            String deviceId = device.getText().toString().trim();
+            String value = token.getText().toString();
+            PendingOperation.validateText(deviceId, 256);
+            if (deviceId.isEmpty()) throw new IllegalArgumentException();
+            if (value.isEmpty() && !scannerConfigurationUsable(this)) throw new IllegalArgumentException();
+            SecureTokenStore secure = new SecureTokenStore(this);
+            if (!secure.available()) throw new IllegalStateException();
+            CredentialUpdateState update = new CredentialUpdateState(new PreferenceMetadata(this), new SecureStorage(secure));
+            if (!update.update(origin, storeId, deviceId, value)) throw new IllegalStateException();
+            token.setText("");
+            status.setText("Scoped rewards scanner provisioning saved. The display login session remains in WebView cookies.");
+            status.setVisibility(View.VISIBLE);
+        } catch (Exception e) {
+            status.setText("Scanner provisioning requires the current display server/store, a device ID, and a scoped token.");
+            status.setVisibility(View.VISIBLE);
+        }
     }
 
-    public static String getDisplayUrl(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String url = prefs.getString(KEY_BTCPAY_URL, "");
-        String storeId = prefs.getString(KEY_STORE_ID, "");
-        if (url.isEmpty() || storeId.isEmpty()) return null;
-        return url + "/plugins/bitcoin-rewards/" + storeId + "/display";
+    private String persistDisplayConfiguration(String requestedOrigin, String requestedStore) {
+        String origin = ApiOrigin.requireConfigured(requestedOrigin == null ? "" : requestedOrigin.trim()).toString();
+        String storeId = requestedStore == null ? "" : requestedStore.trim();
+        PendingOperation.validateText(storeId, 256);
+        if (storeId.isEmpty()) throw new IllegalArgumentException();
+        SharedPreferences p = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String oldOrigin = p.getString(KEY_BTCPAY_URL, "");
+        String oldStore = p.getString(KEY_STORE_ID, "");
+        SharedPreferences.Editor editor = p.edit().putString(KEY_BTCPAY_URL, origin).putString(KEY_STORE_ID, storeId);
+        if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
+            editor.remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
+                .putBoolean(KEY_ONBOARDED, false).putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false);
+            device.setText("");
+            token.setText("");
+        }
+        if (!editor.commit()) throw new IllegalStateException();
+        return origin;
     }
 
-    public static String getBtcpayUrl(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_BTCPAY_URL, "");
+    private static boolean pending(Context c) {
+        return c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false);
     }
 
-    public static String getStoreId(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_STORE_ID, "");
+    static boolean isOnboarded(Context c) {
+        return !pending(c) && c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(KEY_ONBOARDED, false);
     }
 
-    public static String getCheckInApiUrl(Context context) {
-        String url = getBtcpayUrl(context);
-        String storeId = getStoreId(context);
-        if (url.isEmpty() || storeId.isEmpty()) return null;
-        return url + "/plugins/bitcoin-rewards/" + storeId + "/check-in/api";
+    static String getBtcpayUrl(Context c) {
+        return c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_BTCPAY_URL, "");
     }
 
-    public static String getWalletTapUrl(Context context, String walletId) {
-        String url = getBtcpayUrl(context);
-        if (url.isEmpty() || walletId == null || walletId.isEmpty()) return null;
-        return url + "/plugins/bitcoin-rewards/wallet/" + walletId + "/tap";
+    static String getStoreId(Context c) {
+        return c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_STORE_ID, "");
     }
 
-    public static String getLoginUrl(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_BTCPAY_URL, "") + "/login";
+    static String getCheckInDeviceId(Context c) {
+        return pending(c) ? "" : c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_CHECK_IN_DEVICE_ID, "");
     }
 
-    public static String getApiKey(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_API_KEY, "");
+    static String getCheckInToken(Context c) {
+        return pending(c) ? "" : new SecureTokenStore(c).load();
     }
 
-    public static String getEmail(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_EMAIL, "");
+    static String getCredentialFingerprint(Context c) {
+        return pending(c) ? "" : c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_TOKEN_FINGERPRINT, "");
     }
 
-    public static boolean isNfcEnabled(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_NFC_ENABLED, true);
+    static long getTokenGeneration(Context c) {
+        return pending(c) ? 0 : c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getLong(KEY_TOKEN_GENERATION, 0);
+    }
+
+    static boolean displayConfigurationUsable(Context c) {
+        try {
+            String storeId = getStoreId(c);
+            PendingOperation.validateText(storeId, 256);
+            return !storeId.isEmpty() && ApiOrigin.requireConfigured(getBtcpayUrl(c)) != null && getDisplayUrl(c) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static boolean scannerConfigurationUsable(Context c) {
+        return displayConfigurationUsable(c) && isOnboarded(c) && !getCheckInDeviceId(c).isEmpty() && !getCheckInToken(c).isEmpty()
+            && !getCredentialFingerprint(c).isEmpty() && getTokenGeneration(c) > 0;
+    }
+
+    static String getDisplayUrl(Context c) {
+        try { return ApiOrigin.requireConfigured(getBtcpayUrl(c)).toString() + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(getStoreId(c)) + "/display"; }
+        catch (Exception e) { return null; }
+    }
+
+    static String getLegacyCheckInUrl(Context c) {
+        try { return buildLegacyCheckInUrl(getBtcpayUrl(c), getStoreId(c)); }
+        catch (Exception e) { return null; }
+    }
+
+    static String buildLegacyCheckInUrl(String origin, String storeId) {
+        PendingOperation.validateText(storeId, 256);
+        if (storeId == null || storeId.isEmpty()) throw new IllegalArgumentException();
+        return ApiOrigin.requireConfigured(origin).toString() + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(storeId) + "/check-in/api";
+    }
+
+    private static String buildDisplayUrl(String origin, String storeId) {
+        return ApiOrigin.requireConfigured(origin).toString() + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(storeId) + "/display";
+    }
+
+    private static final class SecureStorage implements CredentialUpdateState.TokenStorage {
+        private final SecureTokenStore secure;
+        SecureStorage(SecureTokenStore secure) { this.secure = secure; }
+        public boolean save(String value) { return secure.save(value); }
+        public String load() { return secure.load(); }
+    }
+
+    private static final class PreferenceMetadata implements CredentialUpdateState.MetadataStorage {
+        private final SharedPreferences p;
+        PreferenceMetadata(Context c) { p = c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE); }
+        public CredentialUpdateState.Metadata read() { return new CredentialUpdateState.Metadata(p.getString(KEY_BTCPAY_URL, ""), p.getString(KEY_STORE_ID, ""), p.getString(KEY_CHECK_IN_DEVICE_ID, ""), p.getString(KEY_TOKEN_FINGERPRINT, ""), p.getLong(KEY_TOKEN_GENERATION, 0), p.getBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false), p.getBoolean(KEY_ONBOARDED, false)); }
+        public boolean markPending() { return p.edit().putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, true).putBoolean(KEY_ONBOARDED, false).commit(); }
+        public boolean finish(CredentialUpdateState.Metadata m) { return p.edit().putString(KEY_BTCPAY_URL, m.origin).putString(KEY_STORE_ID, m.store).putString(KEY_CHECK_IN_DEVICE_ID, m.device).putString(KEY_TOKEN_FINGERPRINT, m.fingerprint).putLong(KEY_TOKEN_GENERATION, m.generation).putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false).putBoolean(KEY_ONBOARDED, true).commit(); }
     }
 }

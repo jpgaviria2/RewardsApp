@@ -30,7 +30,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Point the camera at the customer's wallet QR. It must contain a Lightning address."
+            android:text="Point the camera at the customer's wallet payout QR. It must contain a Lightning address or LNURL-pay code."
             android:textColor="#DDE7EF"
             android:textSize="16sp" />
     </LinearLayout>

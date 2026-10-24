@@ -2,7 +2,7 @@ package com.bitcoinrewards.nfcdisplay;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.Intent;
+
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,7 +22,6 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView;
  * "code;baseUrl;email". SettingsActivity normalizes the payload.
  */
 public class LoginCodeScanActivity extends Activity {
-    public static final String EXTRA_LOGIN_CODE_PAYLOAD = "login_code_payload";
     private static final int CAMERA_PERMISSION_REQUEST = 4301;
 
     private DecoratedBarcodeView barcodeView;
@@ -78,9 +77,8 @@ public class LoginCodeScanActivity extends Activity {
             handled = true;
             barcodeView.pause();
             vibrate();
-            Intent data = new Intent();
-            data.putExtra(EXTRA_LOGIN_CODE_PAYLOAD, payload);
-            setResult(RESULT_OK, data);
+            OneTimeLoginHandoff.publish(payload);
+            setResult(RESULT_OK);
             finish();
         }
     };
