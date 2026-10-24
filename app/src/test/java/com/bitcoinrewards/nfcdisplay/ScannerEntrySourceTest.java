@@ -42,5 +42,8 @@ public class ScannerEntrySourceTest {
         assertFalse(scanner.contains(".cancel(true)"));
         assertTrue(coordinator.contains("new OperationTaskGate()"));
         assertTrue(coordinator.contains("WeakReference<Listener>"));
+        assertTrue(scanner.contains("coordinator.begin(payload)"));
+        assertTrue(scanner.indexOf("coordinator.begin(payload)")<scanner.indexOf("barcode.pause()",scanner.indexOf("coordinator.begin(payload)")));
+        assertTrue(coordinator.contains("PendingOperation.prepared"));
     }
 }

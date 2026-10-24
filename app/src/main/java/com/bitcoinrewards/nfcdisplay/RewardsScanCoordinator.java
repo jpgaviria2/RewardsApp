@@ -23,7 +23,7 @@ final class RewardsScanCoordinator {
         void onStatus(String message);
         void onLocked(String message);
         void onRetryRequired();
-        void onConfirmation(CheckInApiContract.ConfirmationResponse response);
+        void onConfirmation(CheckInApiContract.ConfirmationResponse response,String localDestinationLabel);
         void onTerminal(String message);
     }
     private interface Work { void run() throws Exception; }
@@ -63,10 +63,11 @@ final class RewardsScanCoordinator {
         runOperation();
     }
 
-    synchronized boolean begin(String destination) {
+    synchronized boolean begin(WalletQrPayloadParser.ParsedPayload payload) {
+        if(payload==null)return false;
         if(gate.running()||operation!=null||PendingOperationRepository.isLocked(repository.load()))return false;
         if(!SettingsActivity.configurationUsable(context)){locked("Provision this scanner with a scoped device token in settings.");return false;}
-        PendingOperation prepared=PendingOperation.prepared(SettingsActivity.getStoreId(context),SettingsActivity.getCheckInDeviceId(context),SettingsActivity.getCredentialFingerprint(context),SettingsActivity.getTokenGeneration(context),destination,UUID.randomUUID(),CheckInApiContract.VERSION);
+        PendingOperation prepared=PendingOperation.prepared(SettingsActivity.getStoreId(context),SettingsActivity.getCheckInDeviceId(context),SettingsActivity.getCredentialFingerprint(context),SettingsActivity.getTokenGeneration(context),payload,UUID.randomUUID(),CheckInApiContract.VERSION);
         if(!repository.save(prepared)){locked("Check-in identity could not be saved. No network request was made.");return false;}
         operation=prepared;
         status("Starting secure check-in…");
@@ -86,7 +87,7 @@ final class RewardsScanCoordinator {
     static String readBounded(InputStream in,int cap)throws Exception{if(in==null)return "";try(InputStream source=in;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[2048];int total=0,n;while((n=source.read(buffer))!=-1){total+=n;if(total>cap)throw new IllegalArgumentException();out.write(buffer,0,n);}return new String(out.toByteArray(),StandardCharsets.UTF_8);}}
     private boolean identityMatches(PendingOperation op){return op.matchesIdentity(SettingsActivity.getStoreId(context),SettingsActivity.getCheckInDeviceId(context),SettingsActivity.getCredentialFingerprint(context),SettingsActivity.getTokenGeneration(context))&&SettingsActivity.configurationUsable(context);}
     private String base(){return SettingsActivity.getBtcpayUrl(context);} private String token(){return SettingsActivity.getCheckInToken(context);}
-    private void status(String value){post(l->l.onStatus(value));} private void locked(String value){post(l->l.onLocked(value));} private void retryRequired(){post(Listener::onRetryRequired);} private void confirmation(CheckInApiContract.ConfirmationResponse value){post(l->l.onConfirmation(value));} private void terminal(String value){post(l->l.onTerminal(value));}
+    private void status(String value){post(l->l.onStatus(value));} private void locked(String value){post(l->l.onLocked(value));} private void retryRequired(){post(Listener::onRetryRequired);} private void confirmation(CheckInApiContract.ConfirmationResponse value){String label; synchronized(this){label=operation==null?"Scanned payout destination":operation.localDestinationLabel;}post(l->l.onConfirmation(value,label));} private void terminal(String value){post(l->l.onTerminal(value));}
     private void post(UiAction action){main.post(()->{Listener value; synchronized(this){value=listener.get();}if(value!=null)action.deliver(value);});}
     private static final class Response{final int code;final String body;Response(int code,String body){this.code=code;this.body=body;}}
     private static final class PreferenceStorage implements PendingOperationRepository.Storage{private static final String KEY="pending_operation_v2";private final SharedPreferences p;PreferenceStorage(Context c){p=c.getSharedPreferences(SettingsActivity.PREFS_NAME,Context.MODE_PRIVATE);}public boolean commit(String value){return p.edit().putString(KEY,value).commit();}public String read(){return p.getString(KEY,null);}public boolean clear(){return p.edit().remove(KEY).commit();}}

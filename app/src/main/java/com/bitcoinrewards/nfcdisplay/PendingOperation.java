@@ -1,54 +1,34 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import org.json.JSONObject;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Locale;
 import java.util.UUID;
 
 final class PendingOperation {
     enum Phase { SUBMITTING, POLLING, AWAITING_APPROVAL, CONFIRMING, CANCELLING }
-    final String storeId, deviceId, credentialFingerprint, destination;
-    final long tokenGeneration;
-    final UUID checkInId, confirmationId;
-    final int version, confirmationVersion;
-    final Phase phase;
-
-    private PendingOperation(String s,String d,String f,long g,String destination,UUID checkIn,UUID confirmation,
-                             int protocolVersion,int confirmationVersion,Phase phase){
-        this.storeId=s;this.deviceId=d;this.credentialFingerprint=f;this.tokenGeneration=g;this.destination=destination;
-        this.checkInId=checkIn;this.confirmationId=confirmation;this.version=protocolVersion;
-        this.confirmationVersion=confirmationVersion;this.phase=phase;
-    }
-    static PendingOperation prepared(String s,String d,String f,long g,String destination,UUID checkIn,int version){
-        validate(s,d,f,g,destination,checkIn,version);return new PendingOperation(s,d,f,g,destination,checkIn,null,version,0,Phase.SUBMITTING);
-    }
-    static PendingOperation started(String s,String d,String f,long g,String destination,UUID checkIn,int version){
-        validate(s,d,f,g,destination,checkIn,version);return new PendingOperation(s,d,f,g,destination,checkIn,null,version,0,Phase.POLLING);
-    }
+    final String storeId,deviceId,credentialFingerprint,destination,scanText,scanSha256,localDestinationLabel;
+    final long tokenGeneration;final UUID checkInId,confirmationId;final int version,confirmationVersion;final Phase phase;
+    private PendingOperation(String s,String d,String f,long g,String destination,String scanText,String digest,String label,UUID checkIn,UUID confirmation,int protocolVersion,int confirmationVersion,Phase phase){this.storeId=s;deviceId=d;credentialFingerprint=f;tokenGeneration=g;this.destination=destination;this.scanText=scanText;scanSha256=digest;localDestinationLabel=label;checkInId=checkIn;confirmationId=confirmation;version=protocolVersion;this.confirmationVersion=confirmationVersion;this.phase=phase;}
+    static PendingOperation prepared(String s,String d,String f,long g,String destination,UUID checkIn,int version){return prepared(s,d,f,g,destination,destination,digest(destination),fallbackLabel(destination),checkIn,version);}
+    static PendingOperation prepared(String s,String d,String f,long g,WalletQrPayloadParser.ParsedPayload payload,UUID checkIn,int version){if(payload==null)throw bad();return prepared(s,d,f,g,payload.value,new String(payload.scanBytes,StandardCharsets.UTF_8),payload.scanSha256,payload.displayLabel(),checkIn,version);}
+    private static PendingOperation prepared(String s,String d,String f,long g,String destination,String scanText,String digest,String label,UUID checkIn,int version){validate(s,d,f,g,destination,scanText,digest,label,checkIn,version);return new PendingOperation(s,d,f,g,destination,scanText,digest,label,checkIn,null,version,0,Phase.SUBMITTING);}
+    static PendingOperation started(String s,String d,String f,long g,String destination,UUID checkIn,int version){return prepared(s,d,f,g,destination,checkIn,version).submitted();}
     PendingOperation submitted(){if(phase!=Phase.SUBMITTING)throw bad();return copy(null,0,Phase.POLLING);}
-    PendingOperation awaiting(UUID confirmation){return awaiting(confirmation,1);}
-    PendingOperation awaiting(UUID confirmation,int serverVersion){if(confirmation==null||serverVersion<1)throw bad();
-        if(phase==Phase.CONFIRMING||phase==Phase.CANCELLING)return this;
-        return copy(confirmation,serverVersion,Phase.AWAITING_APPROVAL);}
-    PendingOperation confirming(){if(confirmationId==null||confirmationVersion<1)throw bad();return copy(confirmationId,confirmationVersion,Phase.CONFIRMING);}
-    PendingOperation cancelling(){if(confirmationId==null||confirmationVersion<1)throw bad();return copy(confirmationId,confirmationVersion,Phase.CANCELLING);}
-    PendingOperation reconciled(UUID confirmation,int serverVersion,Phase requested){
-        if(confirmation==null||serverVersion<1)throw bad();
-        Phase next=(phase==Phase.CONFIRMING||phase==Phase.CANCELLING)?phase:requested;
-        return copy(confirmation,serverVersion,next);
-    }
-    private PendingOperation copy(UUID confirmation,int serverVersion,Phase next){return new PendingOperation(storeId,deviceId,credentialFingerprint,
-        tokenGeneration,destination,checkInId,confirmation,version,serverVersion,next);}
+    PendingOperation awaiting(UUID confirmation){return awaiting(confirmation,1);}PendingOperation awaiting(UUID confirmation,int serverVersion){if(confirmation==null||serverVersion<1||serverVersion<confirmationVersion)throw bad();if(confirmationId!=null&&!confirmationId.equals(confirmation))throw bad();if(phase==Phase.CONFIRMING||phase==Phase.CANCELLING)return this;return copy(confirmation,serverVersion,Phase.AWAITING_APPROVAL);}
+    PendingOperation confirming(){if(confirmationId==null||confirmationVersion<1)throw bad();return copy(confirmationId,confirmationVersion,Phase.CONFIRMING);}PendingOperation cancelling(){if(confirmationId==null||confirmationVersion<1)throw bad();return copy(confirmationId,confirmationVersion,Phase.CANCELLING);}
+    PendingOperation reconciled(UUID confirmation,int serverVersion,Phase requested){if(confirmation==null||serverVersion<1||serverVersion<confirmationVersion)throw bad();Phase next=(phase==Phase.CONFIRMING||phase==Phase.CANCELLING)?phase:requested;return copy(confirmation,serverVersion,next);}
+    private PendingOperation copy(UUID confirmation,int serverVersion,Phase next){return new PendingOperation(storeId,deviceId,credentialFingerprint,tokenGeneration,destination,scanText,scanSha256,localDestinationLabel,checkInId,confirmation,version,serverVersion,next);}
     boolean matchesIdentity(String store,String device,String fingerprint,long generation){return storeId.equals(store)&&deviceId.equals(device)&&credentialFingerprint.equals(fingerprint)&&tokenGeneration==generation;}
-    JSONObject toJson(){try{return new JSONObject().put("storeId",storeId).put("deviceId",deviceId).put("credentialFingerprint",credentialFingerprint)
-        .put("tokenGeneration",tokenGeneration).put("destination",destination).put("checkInId",checkInId.toString())
-        .put("confirmationId",confirmationId==null?JSONObject.NULL:confirmationId.toString()).put("protocolVersion",version)
-        .put("confirmationVersion",confirmationVersion).put("phase",phase.name());}catch(Exception e){throw bad();}}
-    static PendingOperation fromJson(String raw){JSONObject j=ExactJson.object(raw);requireKeys(j,"storeId","deviceId","credentialFingerprint","tokenGeneration","destination","checkInId","confirmationId","protocolVersion","confirmationVersion","phase");
-        try{UUID c=j.isNull("confirmationId")?null:exactUuid(j.getString("confirmationId"));PendingOperation p=new PendingOperation(j.getString("storeId"),j.getString("deviceId"),j.getString("credentialFingerprint"),exactLong(j,"tokenGeneration"),j.getString("destination"),exactUuid(j.getString("checkInId")),c,exactInt(j,"protocolVersion"),(int)exactLong(j,"confirmationVersion"),Phase.valueOf(j.getString("phase")));validateText(p.storeId,256);validateText(p.deviceId,256);validateText(p.credentialFingerprint,128);validateText(p.destination,4096);if(p.tokenGeneration<1||p.version!=CheckInApiContract.VERSION||p.confirmationVersion<0||((p.phase==Phase.AWAITING_APPROVAL||p.phase==Phase.CONFIRMING||p.phase==Phase.CANCELLING)&&(p.confirmationId==null||p.confirmationVersion<1))||((p.phase==Phase.SUBMITTING||p.phase==Phase.POLLING)&&(p.confirmationId!=null||p.confirmationVersion!=0)))throw bad();return p;}catch(Exception e){throw bad();}}
+    JSONObject toJson(){try{return new JSONObject().put("storeId",storeId).put("deviceId",deviceId).put("credentialFingerprint",credentialFingerprint).put("tokenGeneration",tokenGeneration).put("destination",destination).put("scanText",scanText).put("scanSha256",scanSha256).put("localDestinationLabel",localDestinationLabel).put("checkInId",checkInId.toString()).put("confirmationId",confirmationId==null?JSONObject.NULL:confirmationId.toString()).put("protocolVersion",version).put("confirmationVersion",confirmationVersion).put("phase",phase.name());}catch(Exception e){throw bad();}}
+    static PendingOperation fromJson(String raw){JSONObject j=ExactJson.object(raw);boolean legacy=j.length()==10;if(legacy)requireKeys(j,"storeId","deviceId","credentialFingerprint","tokenGeneration","destination","checkInId","confirmationId","protocolVersion","confirmationVersion","phase");else requireKeys(j,"storeId","deviceId","credentialFingerprint","tokenGeneration","destination","scanText","scanSha256","localDestinationLabel","checkInId","confirmationId","protocolVersion","confirmationVersion","phase");try{String storedDestination=j.getString("destination");Phase phase=Phase.valueOf(j.getString("phase"));WalletQrPayloadParser.ParsedPayload legacyPayload=legacy?WalletQrPayloadParser.parse(storedDestination):null;String destination=legacy&&phase==Phase.SUBMITTING?legacyPayload.value:storedDestination,scanText=legacy?storedDestination:j.getString("scanText"),digest=legacy?legacyPayload.scanSha256:j.getString("scanSha256"),label=legacy?legacyPayload.displayLabel():j.getString("localDestinationLabel");UUID c=j.isNull("confirmationId")?null:exactUuid(j.getString("confirmationId"));PendingOperation p=new PendingOperation(j.getString("storeId"),j.getString("deviceId"),j.getString("credentialFingerprint"),exactLong(j,"tokenGeneration"),destination,scanText,digest,label,exactUuid(j.getString("checkInId")),c,exactInt(j,"protocolVersion"),(int)exactLong(j,"confirmationVersion"),phase);validate(p.storeId,p.deviceId,p.credentialFingerprint,p.tokenGeneration,p.destination,p.scanText,p.scanSha256,p.localDestinationLabel,p.checkInId,p.version);if(p.confirmationVersion<0||((p.phase==Phase.AWAITING_APPROVAL||p.phase==Phase.CONFIRMING||p.phase==Phase.CANCELLING)&&(p.confirmationId==null||p.confirmationVersion<1))||((p.phase==Phase.SUBMITTING||p.phase==Phase.POLLING)&&(p.confirmationId!=null||p.confirmationVersion!=0)))throw bad();return p;}catch(Exception e){throw bad();}}
     static void requireKeys(JSONObject j,String... keys){if(j.length()!=keys.length)throw bad();for(String k:keys)if(!j.has(k))throw bad();}
-    static long exactLong(JSONObject j,String k){Object v=j.opt(k);if(!(v instanceof Long||v instanceof Integer))throw bad();return((Number)v).longValue();}
-    static int exactInt(JSONObject j,String k){long v=exactLong(j,k);if(v<1||v>Integer.MAX_VALUE)throw bad();return(int)v;}
+    static long exactLong(JSONObject j,String k){Object v=j.opt(k);if(!(v instanceof Long||v instanceof Integer))throw bad();return((Number)v).longValue();}static int exactInt(JSONObject j,String k){long v=exactLong(j,k);if(v<1||v>Integer.MAX_VALUE)throw bad();return(int)v;}
     static UUID exactUuid(String value){if(value==null||!value.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))throw bad();UUID parsed=UUID.fromString(value);if(!parsed.toString().equals(value)||parsed.variant()!=2||parsed.version()<1||parsed.version()>5||(parsed.getMostSignificantBits()==0&&parsed.getLeastSignificantBits()==0))throw bad();return parsed;}
     static void validateText(String s,int max){if(s==null||s.isEmpty()||s.length()>max)throw bad();boolean meaningful=false;for(int offset=0;offset<s.length();){int cp=s.codePointAt(offset);if(Character.isSurrogate(s.charAt(offset))&&Character.charCount(cp)==1)throw bad();int type=Character.getType(cp);if(Character.isISOControl(cp)||type==Character.FORMAT||type==Character.LINE_SEPARATOR||type==Character.PARAGRAPH_SEPARATOR||type==Character.PRIVATE_USE||type==Character.UNASSIGNED||type==Character.SURROGATE)throw bad();if(type!=Character.NON_SPACING_MARK&&type!=Character.COMBINING_SPACING_MARK&&type!=Character.ENCLOSING_MARK&&!Character.isWhitespace(cp)&&type!=Character.SPACE_SEPARATOR)meaningful=true;offset+=Character.charCount(cp);}if(!meaningful)throw bad();}
-    private static void validate(String s,String d,String f,long g,String destination,UUID checkIn,int version){validateText(s,256);validateText(d,256);validateText(f,128);validateText(destination,4096);if(g<1||version!=CheckInApiContract.VERSION||checkIn==null)throw bad();}
+    private static void validate(String s,String d,String f,long g,String destination,String scanText,String digest,String label,UUID checkIn,int version){validateText(s,256);validateText(d,256);validateText(f,128);validateText(destination,4096);if(scanText==null||scanText.getBytes(StandardCharsets.UTF_8).length>4096||!digest(scanText).equals(digest))throw bad();validateText(label,256);if(g<1||version!=CheckInApiContract.VERSION||checkIn==null||digest==null||!digest.matches("[0-9a-f]{64}"))throw bad();}
+    private static String fallbackLabel(String destination){try{return WalletQrPayloadParser.parse(destination).displayLabel();}catch(Exception e){return"Scanned payout destination";}}
+    private static String digest(String value){try{byte[] hash=MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder();for(byte item:hash)out.append(String.format(Locale.ROOT,"%02x",item&255));return out.toString();}catch(Exception e){throw new IllegalStateException(e);}}
     static IllegalArgumentException bad(){return new IllegalArgumentException("Invalid operation data");}
 }

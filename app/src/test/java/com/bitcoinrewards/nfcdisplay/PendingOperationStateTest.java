@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import org.junit.Test;
+import org.json.JSONObject;
 import java.util.UUID;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -70,6 +71,41 @@ public class PendingOperationStateTest {
         assertFalse(operation.matchesIdentity("store","other","fingerprint",3));
         assertFalse(operation.matchesIdentity("store","device","replacement",3));
         assertFalse(operation.matchesIdentity("store","device","fingerprint",4));
+    }
+
+    @Test public void safeLegacySubmissionIsReparsedAndMigratedBeforeItCanBeSubmitted() throws Exception {
+        String raw=legacy("Alice@Example.COM",PendingOperation.Phase.SUBMITTING);
+        PendingOperation migrated=PendingOperation.fromJson(raw);
+        assertEquals("alice@example.com",migrated.destination);
+        assertEquals("Alice@Example.COM",migrated.scanText);
+        assertEquals("Ali…@Example.COM",migrated.localDestinationLabel);
+        PendingOperation restored=PendingOperation.fromJson(migrated.toJson().toString());
+        assertEquals(migrated.destination,restored.destination);assertEquals(migrated.scanSha256,restored.scanSha256);
+    }
+
+    @Test public void safeLegacyPollingKeepsTheAlreadySubmittedCorrelationValue() throws Exception {
+        PendingOperation migrated=PendingOperation.fromJson(legacy("Alice@Example.COM",PendingOperation.Phase.POLLING));
+        assertEquals("Alice@Example.COM",migrated.destination);
+        assertEquals("Alice@Example.COM",migrated.scanText);
+        assertEquals("Ali…@Example.COM",migrated.localDestinationLabel);
+    }
+
+    @Test public void unsafeLegacySubmittingAndPollingBecomeManualLocks() throws Exception {
+        for(PendingOperation.Phase phase:new PendingOperation.Phase[]{PendingOperation.Phase.SUBMITTING,PendingOperation.Phase.POLLING}){
+            String raw=legacy("https://evil.example/not-lnurl",phase);
+            assertThrows(IllegalArgumentException.class,()->PendingOperation.fromJson(raw));
+            ScannerOperationState state=new ScannerOperationState(raw);
+            assertTrue(state.isLocked());assertTrue(state.isMalformed());assertEquals(ScannerOperationState.Action.NONE,state.onResume());
+            FakeStorage storage=new FakeStorage();storage.value=raw;
+            PendingOperationRepository.LoadResult loaded=new PendingOperationRepository(storage).load();
+            assertTrue(loaded.malformed);assertNull(loaded.operation);assertTrue(PendingOperationRepository.isLocked(loaded));
+        }
+    }
+
+    private static String legacy(String destination,PendingOperation.Phase phase) throws Exception {
+        return new JSONObject().put("storeId","store").put("deviceId","device").put("credentialFingerprint","fingerprint")
+            .put("tokenGeneration",3).put("destination",destination).put("checkInId","11111111-1111-4111-8111-111111111111")
+            .put("confirmationId",JSONObject.NULL).put("protocolVersion",2).put("confirmationVersion",0).put("phase",phase.name()).toString();
     }
 
     private static final class FakeStorage implements PendingOperationRepository.Storage {

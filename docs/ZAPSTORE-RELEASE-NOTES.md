@@ -1,5 +1,7 @@
-# Rewards NFC Display 2.12.3
+# Rewards NFC Display 2.13.0
 
-- Makes the customer-facing waiting screen say “Scan here to get rewards” and explains that customers should show their wallet's Lightning address QR to the camera before paying.
-- Rewords the native scanner prompt to “Show wallet QR to camera.”
-- Leaves the reward-ready and checked-in states unchanged.
+- Adds standards-compliant LNURL-pay QR scanning to the existing Lightning-address rewards workflow.
+- Strictly validates LNURL Bech32 payloads and decoded HTTPS destinations before submitting a check-in.
+- Preserves scan evidence and displays a destination label derived locally from the scanned QR.
+- Keeps the existing server-authoritative reward amount, confirmation, retry, cancellation, and terminal-status flow.
+- Preserves Lightning-address scanning while canonicalizing its server-facing value for reliable correlation.

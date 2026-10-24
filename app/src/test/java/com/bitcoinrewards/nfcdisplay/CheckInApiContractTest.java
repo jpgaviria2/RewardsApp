@@ -10,6 +10,46 @@ public class CheckInApiContractTest {
     private static final String CHECK_IN = "11111111-1111-4111-8111-111111111111";
     private static final String CONFIRMATION = "22222222-2222-4222-8222-222222222222";
 
+    @Test public void lnurlPayUsesTheIdenticalExistingCheckInAndConfirmationPath() throws Exception {
+        String lnurl="lnurl1dp68gurn8ghj7urp0yhx27rpd4cxcef0d3h82unvwqhkzmrfvdjsvmqd25";
+        WalletQrPayloadParser.ParsedPayload scan=WalletQrPayloadParser.parse(" lightning:"+lnurl+"\r\n");
+        PendingOperation prepared=PendingOperation.prepared("store","device","fingerprint",4,scan,UUID.fromString(CHECK_IN),2);
+        CheckInApiContract.Request create=CheckInApiContract.checkIn("https://btcpay.example","token",prepared);
+        assertEquals("https://btcpay.example/plugins/bitcoin-rewards/store/check-in/api/v2",create.url);
+        assertEquals(lnurl,new org.json.JSONObject(create.body).getString("destination"));
+        assertFalse(create.body.contains("lnurlEndpoint"));
+        String pending="{\"status\":\"PENDING\",\"storeId\":\"store\",\"deviceId\":\"device\",\"tokenGeneration\":4,\"destination\":\""+lnurl+"\",\"checkInId\":\""+CHECK_IN+"\",\"protocolVersion\":2}";
+        PendingOperation polling=CheckInApiContract.parseCheckInResponse(pending).correlate(prepared);
+        assertEquals(PendingOperation.Phase.POLLING,polling.phase);
+        assertEquals(scan.scanSha256,polling.scanSha256);
+        assertEquals(" lightning:"+lnurl+"\r\n",polling.scanText);
+        assertEquals(scan.displayLabel(),polling.localDestinationLabel);
+        String awaiting="{\"status\":\"AWAITING_CONFIRMATION\",\"storeId\":\"store\",\"deviceId\":\"device\",\"tokenGeneration\":4,\"destination\":\""+lnurl+"\",\"checkInId\":\""+CHECK_IN+"\",\"confirmationId\":\""+CONFIRMATION+"\",\"confirmationVersion\":1,\"protocolVersion\":2,\"amountSatoshis\":321,\"destinationLabel\":\"server metadata\"}";
+        CheckInApiContract.ConfirmationResponse confirmation=CheckInApiContract.parseConfirmationResponse(awaiting,polling);
+        assertEquals(321,confirmation.amountSatoshis);assertEquals(PendingOperation.Phase.AWAITING_APPROVAL,confirmation.operation.phase);
+        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice",confirmation.operation.localDestinationLabel);
+    }
+
+    @Test public void lowerConfirmationVersionsAreRejectedBeforeStateMutation() {
+        PendingOperation operation=PendingOperation.started("store","device","fingerprint",4,"alice@example.com",UUID.fromString(CHECK_IN),2).awaiting(UUID.fromString(CONFIRMATION),2);
+        String lower="{\"status\":\"AWAITING_CONFIRMATION\",\"storeId\":\"store\",\"deviceId\":\"device\",\"tokenGeneration\":4,\"destination\":\"alice@example.com\",\"checkInId\":\""+CHECK_IN+"\",\"confirmationId\":\""+CONFIRMATION+"\",\"confirmationVersion\":1,\"protocolVersion\":2,\"amountSatoshis\":321,\"destinationLabel\":\"alice@example.com\"}";
+        assertThrows(IllegalArgumentException.class,()->CheckInApiContract.parseConfirmationResponse(lower,operation));
+    }
+
+    @Test public void mixedCaseLightningAddressUsesCanonicalContractValueAndPreservesLocalEvidence() throws Exception {
+        String raw=" lightning:Alice@Example.COM\r\n";
+        WalletQrPayloadParser.ParsedPayload scan=WalletQrPayloadParser.parse(raw);
+        PendingOperation prepared=PendingOperation.prepared("store","device","fingerprint",4,scan,UUID.fromString(CHECK_IN),2);
+        CheckInApiContract.Request create=CheckInApiContract.checkIn("https://btcpay.example","token",prepared);
+        assertEquals("alice@example.com",new org.json.JSONObject(create.body).getString("destination"));
+        assertEquals(raw,prepared.scanText);assertEquals(scan.scanSha256,prepared.scanSha256);assertEquals("Ali…@Example.COM",prepared.localDestinationLabel);
+        String pending=validCheckIn().replace("Alice@Example.com","alice@example.com");
+        PendingOperation polling=CheckInApiContract.parseCheckInResponse(pending).correlate(prepared);
+        assertEquals("alice@example.com",polling.destination);assertEquals(raw,polling.scanText);assertEquals("Ali…@Example.COM",polling.localDestinationLabel);
+        PendingOperation restored=PendingOperation.fromJson(polling.toJson().toString());
+        assertEquals(polling.destination,restored.destination);assertEquals(polling.scanText,restored.scanText);assertEquals(polling.scanSha256,restored.scanSha256);assertEquals(polling.localDestinationLabel,restored.localDestinationLabel);
+    }
+
     @Test public void v2RequestsEncodeEveryPathSegmentAndUseOrgJsonBodies() throws Exception {
         PendingOperation operation = PendingOperation.started("store */?é", "device", "fingerprint", 4,
             "Alice@Example.com", UUID.fromString(CHECK_IN), 2);
