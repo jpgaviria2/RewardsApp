@@ -6,7 +6,6 @@ import android.content.pm.PackageManager;
 import android.nfc.NfcAdapter;
 import android.nfc.cardemulation.HostApduService;
 import android.os.Bundle;
-import android.util.Log;
 
 /**
  * HCE service for broadcasting LNURL-withdraw via NFC NDEF Type 4 Tag emulation.
@@ -43,12 +42,10 @@ public class NdefHostCardEmulationService extends HostApduService {
      */
     public static void setPayload(String uri) {
         pendingPayload = (uri != null) ? uri : "";
-        Log.i(TAG, "Static payload set: " + (uri != null ? uri.substring(0, Math.min(40, uri.length())) + "..." : "empty"));
         
         // If service already running, update it immediately
         if (instance != null && instance.ndefProcessor != null) {
             instance.ndefProcessor.setMessageToSend(pendingPayload);
-            Log.i(TAG, "Updated running service with new payload");
         }
     }
 
@@ -60,7 +57,6 @@ public class NdefHostCardEmulationService extends HostApduService {
         if (instance != null && instance.ndefProcessor != null) {
             instance.ndefProcessor.setMessageToSend("");
         }
-        Log.i(TAG, "Payload cleared");
     }
 
     /**
@@ -92,10 +88,6 @@ public class NdefHostCardEmulationService extends HostApduService {
         // Load any pending payload that was set before service existed
         if (pendingPayload != null && !pendingPayload.isEmpty()) {
             ndefProcessor.setMessageToSend(pendingPayload);
-            Log.i(TAG, "HCE Service created — loaded pending payload: " + 
-                pendingPayload.substring(0, Math.min(40, pendingPayload.length())) + "...");
-        } else {
-            Log.i(TAG, "HCE Service created — no payload pending");
         }
     }
 
@@ -103,7 +95,6 @@ public class NdefHostCardEmulationService extends HostApduService {
     public void onDestroy() {
         super.onDestroy();
         if (instance == this) instance = null;
-        Log.i(TAG, "HCE Service destroyed");
     }
 
     @Override
@@ -125,7 +116,6 @@ public class NdefHostCardEmulationService extends HostApduService {
             }
             return STATUS_FAILED;
         } catch (Exception e) {
-            Log.e(TAG, "Error processing APDU: " + e.getMessage(), e);
             return STATUS_FAILED;
         }
     }
@@ -133,7 +123,6 @@ public class NdefHostCardEmulationService extends HostApduService {
     @Override
     public void onDeactivated(int reason) {
         tapNotified = false;
-        Log.i(TAG, "HCE deactivated, reason: " + reason);
     }
 
     // Legacy instance methods — delegate to static
