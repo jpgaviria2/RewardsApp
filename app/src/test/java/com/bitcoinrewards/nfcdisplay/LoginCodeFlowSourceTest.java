@@ -33,6 +33,9 @@ public class LoginCodeFlowSourceTest {
         assertFalse(scanner.contains("putExtra"));
         assertFalse(main.contains("EXTRA_LOGIN_URL"));
         assertFalse(settings.contains("putString(loginUrl"));
+        assertTrue(main.contains("new TrustedDisplayRecovery(\n            trustedDisplayUrl"));
+        assertTrue(main.contains("webView.loadUrl(trustedDisplayUrl)"));
+        assertFalse(main.contains("webView.loadUrl(requestedLogin)"));
     }
 
     @Test public void loginExchangeAvoidsCacheThenClearsHistoryAtExactDisplayUrl() throws Exception {

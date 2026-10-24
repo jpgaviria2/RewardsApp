@@ -70,6 +70,15 @@ public class WalletQrPayloadParserTest {
         rejected("lnurlp://pay.example/alice");rejected("lnurlw://pay.example/withdraw");rejected("nostr:npub1x");rejected("bitcoin:bc1qx");
     }
 
+    @Test public void bolt11InvoicesRemainRejectedWithNarrowUserGuidance(){
+        String invoice="lightning:LNBC1P5FIXEDINVOICE";
+        rejected(invoice);
+        assertTrue(WalletQrPayloadParser.isBolt11Invoice(invoice));
+        assertEquals("Fixed Lightning invoices cannot be used for rewards. Show a Lightning address or LNURL-pay QR.",WalletQrPayloadParser.userFacingRejection(invoice));
+        assertFalse(WalletQrPayloadParser.isBolt11Invoice("alice@example.com"));
+        assertFalse(WalletQrPayloadParser.isBolt11Invoice(encode("https://pay.example/lnurlp/alice")));
+    }
+
     @Test public void rejectsDecodedUnsafeUris(){
         rejected(encode("http://pay.example/lnurlp/alice"));rejected(encode("https://user@pay.example/lnurlp/alice"));
         rejected(encode("https://pay.example:8443/lnurlp/alice"));rejected(encode("https://pay.example/lnurlp/alice#x"));

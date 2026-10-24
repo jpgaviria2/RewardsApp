@@ -24,5 +24,9 @@ public class WebViewSecurityTest {
         assertTrue(source.contains("policy.allowNavigation"));
         assertTrue(source.contains("policy.allowCamera"));
         assertFalse(source.contains("setAcceptThirdPartyCookies(webView, true)"));
+        assertTrue(source.contains("onReceivedSslError"));
+        assertTrue(source.contains("handler.cancel()"));
+        assertFalse(source.contains("handler.proceed()"));
+        assertFalse(source.contains("SslErrorHandler.proceed"));
     }
 }

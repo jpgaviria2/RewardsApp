@@ -32,6 +32,7 @@ public class ScannerEntrySourceTest {
         assertTrue(main.contains("pauseInlineRewardsScanner();"));
         assertTrue(main.contains("boolean blocked = !policy.allowNavigation(url)"));
         assertTrue(main.contains("WalletQrPayloadParser.parse(result.getText())"));
+        assertTrue(main.contains("WalletQrPayloadParser.userFacingRejection(result.getText())"));
         assertTrue(main.contains("body.put(\"lightningAddress\", payload.value)"));
         assertTrue(main.contains("SettingsActivity.getLegacyCheckInUrl"));
         assertTrue(main.contains("DUPLICATE_SCAN_WINDOW_MS"));
@@ -52,10 +53,19 @@ public class ScannerEntrySourceTest {
         assertFalse(main.contains("setRequestedCameraId(0)"));
     }
 
+    @Test public void bothRewardScannersExplainWhyBolt11InvoicesAreUnsafe() throws Exception {
+        String parser = source("src/main/java/com/bitcoinrewards/nfcdisplay/WalletQrPayloadParser.java");
+        String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
+        String provisioned = source("src/main/java/com/bitcoinrewards/nfcdisplay/RewardsProfileScanActivity.java");
+        assertTrue(parser.contains("Fixed Lightning invoices cannot be used for rewards. Show a Lightning address or LNURL-pay QR."));
+        assertTrue(main.contains("WalletQrPayloadParser.userFacingRejection(result.getText())"));
+        assertTrue(provisioned.contains("WalletQrPayloadParser.userFacingRejection(result.getText())"));
+    }
+
     @Test public void webViewMainFrameFailuresImmediatelyGateTheInlineScanner() throws Exception {
         String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
         assertTrue(main.contains("onReceivedError(WebView view, WebResourceRequest request, WebResourceError error)"));
-        assertTrue(main.contains("request != null && request.isForMainFrame()) failMainFrameLoad()"));
+        assertTrue(main.contains("request != null && request.isForMainFrame()) failMainFrameLoad(request.getUrl().toString(), true)"));
         assertTrue(main.contains("onReceivedError(WebView view, int errorCode, String description, String failingUrl)"));
         assertTrue(main.contains("mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)"));
         assertTrue(main.contains("onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response)"));
@@ -63,6 +73,10 @@ public class ScannerEntrySourceTest {
         assertTrue(main.contains("MainFrameLoadGate.isHttpFailure(response.getStatusCode())"));
         assertTrue(main.contains("mainFrameLoadGate.onMainFrameLoadFailed();"));
         assertTrue(main.contains("scannerPageEligible = false;\n        updateInlineScannerState();"));
+        assertTrue(main.contains("trustedDisplayRecovery.onMainFrameNetworkOrTlsFailure(failingUrl)"));
+        assertTrue(main.contains("handler.cancel()"));
+        assertTrue(main.contains("mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)"));
+        assertFalse(main.contains("handler.proceed()"));
     }
 
     @Test public void inlineCheckInUsesOnlyWebViewCookieAuthWithoutPersistenceLoggingOrIntents() throws Exception {

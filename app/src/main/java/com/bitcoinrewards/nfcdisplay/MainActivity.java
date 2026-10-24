@@ -6,15 +6,19 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.net.http.SslError;
 import android.hardware.Camera;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -46,6 +50,9 @@ public class MainActivity extends Activity {
     private static final int CAMERA_PERMISSION_REQUEST = 5501;
     private static final long DUPLICATE_SCAN_WINDOW_MS = 15_000L;
     private static final String LEGACY_INLINE_DEVICE_ID = "rewards-nfc-display-inline";
+    private static final int DISPLAY_RETRY_ATTEMPTS = 5;
+    private static final long DISPLAY_RETRY_INITIAL_MS = 1_000L;
+    private static final long DISPLAY_RETRY_MAX_MS = 8_000L;
 
     private WebView webView;
     private TextView loadingText;
@@ -54,6 +61,8 @@ public class MainActivity extends Activity {
     private final MainFrameLoadGate mainFrameLoadGate = new MainFrameLoadGate();
     private String trustedDisplayUrl;
     private boolean loginExchange;
+    private Handler recoveryHandler;
+    private TrustedDisplayRecovery trustedDisplayRecovery;
 
     private LinearLayout rewardsScannerPanel;
     private DecoratedBarcodeView inlineRewardsScanner;
@@ -97,6 +106,19 @@ public class MainActivity extends Activity {
         final String initialUrl = loginExchange ? requestedLogin : display;
         requestedLogin = null;
         trustedDisplayUrl = display;
+        recoveryHandler = new Handler(Looper.getMainLooper());
+        trustedDisplayRecovery = new TrustedDisplayRecovery(
+            trustedDisplayUrl,
+            DISPLAY_RETRY_ATTEMPTS,
+            DISPLAY_RETRY_INITIAL_MS,
+            DISPLAY_RETRY_MAX_MS,
+            (runnable, delayMs) -> {
+                recoveryHandler.postDelayed(runnable, delayMs);
+                return () -> recoveryHandler.removeCallbacks(runnable);
+            },
+            () -> {
+                if (webView != null) webView.loadUrl(trustedDisplayUrl);
+            });
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
@@ -138,6 +160,7 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, Bitmap icon) {
                 mainFrameLoadGate.onPageStarted(url);
+                trustedDisplayRecovery.onPageStarted(url);
                 scannerPageEligible = false;
                 updateInlineScannerState();
                 super.onPageStarted(view, url, icon);
@@ -145,20 +168,29 @@ public class MainActivity extends Activity {
 
             @Override @android.annotation.TargetApi(23)
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request != null && request.isForMainFrame()) failMainFrameLoad();
+                if (request != null && request.isForMainFrame()) failMainFrameLoad(request.getUrl().toString(), true);
             }
 
             @Override @SuppressWarnings("deprecation")
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
                 String currentUrl = view == null ? null : view.getUrl();
-                if (mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)) failMainFrameLoad();
+                if (mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)) failMainFrameLoad(failingUrl, true);
+            }
+
+            @Override public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                handler.cancel();
+                String failingUrl = error == null ? null : error.getUrl();
+                String currentUrl = view == null ? null : view.getUrl();
+                if (mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)) {
+                    failMainFrameLoad(failingUrl, true);
+                }
             }
 
             @Override @android.annotation.TargetApi(23)
             public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (request != null && request.isForMainFrame() && response != null
                     && MainFrameLoadGate.isHttpFailure(response.getStatusCode())) {
-                    failMainFrameLoad();
+                    failMainFrameLoad(request.getUrl().toString(), false);
                 }
             }
 
@@ -182,12 +214,16 @@ public class MainActivity extends Activity {
             }
 
             @Override public void onPageFinished(WebView view, String url) {
-                if (loginExchange && trustedDisplayUrl.equals(url)) {
+                boolean successfulMainFrame = mainFrameLoadGate.isSuccessfulCompletion(url);
+                if (successfulMainFrame && trustedDisplayUrl.equals(url)) {
+                    trustedDisplayRecovery.onSuccessfulCompletion(url);
+                }
+                if (loginExchange && successfulMainFrame && trustedDisplayUrl.equals(url)) {
                     view.clearHistory();
                     view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
                     loginExchange = false;
                 }
-                scannerPageEligible = mainFrameLoadGate.isSuccessfulCompletion(url)
+                scannerPageEligible = successfulMainFrame
                     && rewardsPagePolicy.isEligiblePageCompletion(url, view.getUrl());
                 updateInlineScannerState();
                 if (scannerPageEligible) updateScannerPanelHeightForPage(view);
@@ -200,10 +236,13 @@ public class MainActivity extends Activity {
         webView.loadUrl(initialUrl);
     }
 
-    private void failMainFrameLoad() {
+    private void failMainFrameLoad(String failingUrl, boolean recoverableNetworkOrTlsFailure) {
         mainFrameLoadGate.onMainFrameLoadFailed();
         scannerPageEligible = false;
         updateInlineScannerState();
+        if (recoverableNetworkOrTlsFailure) {
+            trustedDisplayRecovery.onMainFrameNetworkOrTlsFailure(failingUrl);
+        }
     }
 
     private void requestCameraPermissionIfNeeded() {
@@ -328,7 +367,7 @@ public class MainActivity extends Activity {
             try {
                 payload = WalletQrPayloadParser.parse(result.getText());
             } catch (IllegalArgumentException e) {
-                setRewardsScannerStatus("QR must contain a Lightning address or LNURL-pay code.");
+                setRewardsScannerStatus(WalletQrPayloadParser.userFacingRejection(result.getText()));
                 return;
             }
             long now = System.currentTimeMillis();
@@ -452,6 +491,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();
         if (submitTask != null) submitTask.cancel(true);
         submitTask = null;
         if (inlineRewardsScanner != null) inlineRewardsScanner.pauseAndWait();

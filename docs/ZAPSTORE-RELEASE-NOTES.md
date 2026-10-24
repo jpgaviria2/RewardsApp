@@ -1,6 +1,7 @@
-# Rewards NFC Display 2.13.3
+# Rewards NFC Display 2.13.4
 
-- Authenticates automatic inline scanner check-ins with the existing BTCPay WebView session cookie.
-- Sends the cookie only to the configured trusted HTTPS BTCPay origin and never persists, logs, or passes it through an Intent.
-- Pauses automatic scanning when the cookie is missing, BTCPay redirects to login, or BTCPay returns HTTP 401/403; HTTP 403 also explains that the account may be missing store-settings permission.
-- Preserves the automatic inline camera, strict Lightning-address and LNURL-pay parsing, duplicate-scan throttling, camera Flip control, and BTCPay Login Code flow.
+- Automatically retries the exact configured rewards display after transient main-frame network or TLS failures, using bounded exponential backoff.
+- Cancels stale retries after a successful display load or when the activity is destroyed.
+- Never bypasses Android TLS validation and never replays a consume-once BTCPay Login Code URL.
+- Keeps the inline customer scanner hidden until the trusted rewards display completes successfully.
+- Continues rejecting fixed BOLT11 invoices and now explains that rewards require a reusable Lightning address or LNURL-pay QR.

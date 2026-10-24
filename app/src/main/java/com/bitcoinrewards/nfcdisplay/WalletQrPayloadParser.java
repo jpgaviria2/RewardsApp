@@ -27,6 +27,7 @@ final class WalletQrPayloadParser {
     }
 
     private static final Pattern LIGHTNING_ADDRESS=Pattern.compile("^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$");
+    private static final Pattern BOLT11_INVOICE=Pattern.compile("(?i)^ln(?:bc|tb|bcrt|sb)(?:[0-9]+[munp]?)?1.*$");
     private static final String CHARSET="qpzry9x8gf2tvdw0s3jn54khce6mua7l";
     private WalletQrPayloadParser(){ }
 
@@ -38,6 +39,17 @@ final class WalletQrPayloadParser {
         if(value.length()<=128&&LIGHTNING_ADDRESS.matcher(value).matches())return new ParsedPayload(Kind.LIGHTNING_ADDRESS,value.toLowerCase(Locale.ROOT),exact,null,addressLabel(value));
         URI endpoint=strictHttps(decodeUtf8(decodeLnurl(value)));
         return new ParsedPayload(Kind.LNURL_PAY,value,exact,endpoint,boundedLabel("LNURL-pay candidate • "+normalizedHost(endpoint.getHost())+safePath(endpoint)));
+    }
+
+    static String userFacingRejection(String raw){
+        if(isBolt11Invoice(raw))return "Fixed Lightning invoices cannot be used for rewards. Show a Lightning address or LNURL-pay QR.";
+        return "QR must contain a Lightning address or LNURL-pay code.";
+    }
+
+    static boolean isBolt11Invoice(String raw){
+        if(raw==null)return false;String value=raw.trim();
+        if(value.regionMatches(true,0,"lightning:",0,10))value=value.substring(10);
+        return BOLT11_INVOICE.matcher(value).matches();
     }
 
     private static byte[] strictUtf8(String value){if(value==null)throw invalid();try{ByteBuffer encoded=StandardCharsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).encode(CharBuffer.wrap(value));byte[] out=new byte[encoded.remaining()];encoded.get(out);return out;}catch(CharacterCodingException e){throw invalid();}}
