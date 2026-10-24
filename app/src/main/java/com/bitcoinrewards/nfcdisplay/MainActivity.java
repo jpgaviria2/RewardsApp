@@ -66,6 +66,7 @@ public class MainActivity extends Activity {
     private boolean activityResumed;
     private boolean inlineScannerRunning;
     private boolean inlineSubmissionInFlight;
+    private String inlineAuthenticationFailure;
     private String lastSubmittedValue;
     private long lastSubmittedAtMs;
     private SubmitInlineCheckInTask submitTask;
@@ -261,6 +262,11 @@ public class MainActivity extends Activity {
             setRewardsScannerStatus("Camera permission is required for automatic rewards scanning.");
             return;
         }
+        if (inlineAuthenticationFailure != null) {
+            pauseInlineRewardsScanner();
+            setRewardsScannerStatus(inlineAuthenticationFailure);
+            return;
+        }
         if (rewardsCameraSelection == null) selectRewardsCamera();
         if (!rewardsCameraSelection.hasCamera()) {
             pauseInlineRewardsScanner();
@@ -357,6 +363,7 @@ public class MainActivity extends Activity {
     private final class SubmitInlineCheckInTask extends AsyncTask<Void, Void, Boolean> {
         private final WalletQrPayloadParser.ParsedPayload payload;
         private int responseCode;
+        private boolean loginExpired;
 
         SubmitInlineCheckInTask(WalletQrPayloadParser.ParsedPayload payload) {
             this.payload = payload;
@@ -367,14 +374,24 @@ public class MainActivity extends Activity {
             try {
                 String apiUrl = SettingsActivity.getLegacyCheckInUrl(MainActivity.this);
                 if (apiUrl == null || apiUrl.isEmpty() || isCancelled()) return false;
+                String cookie = InlineCheckInAuthentication.cookieForTrustedApi(
+                    SettingsActivity.getBtcpayUrl(MainActivity.this),
+                    apiUrl,
+                    url -> CookieManager.getInstance().getCookie(url));
+                if (cookie == null) {
+                    loginExpired = true;
+                    return false;
+                }
                 JSONObject body = new JSONObject();
                 body.put("lightningAddress", payload.value);
                 body.put("deviceId", LEGACY_INLINE_DEVICE_ID);
 
                 connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+                connection.setInstanceFollowRedirects(false);
                 connection.setRequestMethod("POST");
                 connection.setRequestProperty("Content-Type", "application/json");
                 connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Cookie", cookie);
                 connection.setConnectTimeout(10_000);
                 connection.setReadTimeout(15_000);
                 connection.setDoOutput(true);
@@ -382,6 +399,7 @@ public class MainActivity extends Activity {
                     output.write(body.toString().getBytes(StandardCharsets.UTF_8));
                 }
                 responseCode = connection.getResponseCode();
+                loginExpired = InlineCheckInAuthentication.isLoginExpired(responseCode);
                 return responseCode >= 200 && responseCode < 300;
             } catch (Exception e) {
                 return false;
@@ -394,6 +412,11 @@ public class MainActivity extends Activity {
             if (submitTask != this) return;
             submitTask = null;
             inlineSubmissionInFlight = false;
+            if (loginExpired) {
+                inlineAuthenticationFailure = InlineCheckInAuthentication.failureMessage(responseCode);
+                updateInlineScannerState();
+                return;
+            }
             if (ok) {
                 setRewardsScannerStatus("Ready to reward " + payload.displayLabel());
                 Toast.makeText(MainActivity.this, "Rewards profile saved: " + payload.displayLabel(), Toast.LENGTH_LONG).show();

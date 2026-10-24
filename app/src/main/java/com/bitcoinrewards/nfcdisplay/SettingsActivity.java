@@ -64,7 +64,10 @@ public class SettingsActivity extends Activity {
             String displayUrl = buildDisplayUrl(origin, store.getText().toString().trim());
             String loginUrl = LoginCodePayloadParser.buildTrustedLoginUrl(parsed, displayUrl);
             OneTimeLoginHandoff.publish(loginUrl);
-            startActivity(new Intent(this, MainActivity.class));
+            Intent main = new Intent(this, MainActivity.class);
+            // MainActivity uses the standard launch mode, so CLEAR_TOP replaces any stale expired instance.
+            main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(main);
             finish();
         } catch (Exception e) {
             status.setText("Login QR rejected. Use a fresh HTTPS BTCPay login QR for the configured server and enter the Store ID.");

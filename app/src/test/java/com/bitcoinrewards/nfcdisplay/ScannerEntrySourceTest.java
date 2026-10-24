@@ -65,6 +65,24 @@ public class ScannerEntrySourceTest {
         assertTrue(main.contains("scannerPageEligible = false;\n        updateInlineScannerState();"));
     }
 
+    @Test public void inlineCheckInUsesOnlyWebViewCookieAuthWithoutPersistenceLoggingOrIntents() throws Exception {
+        String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
+        String auth = source("src/main/java/com/bitcoinrewards/nfcdisplay/InlineCheckInAuthentication.java");
+        assertTrue(main.contains("InlineCheckInAuthentication.cookieForTrustedApi"));
+        assertTrue(main.contains("CookieManager.getInstance().getCookie(url)"));
+        assertTrue(main.contains("connection.setRequestProperty(\"Cookie\", cookie)"));
+        assertTrue(main.contains("connection.setInstanceFollowRedirects(false)"));
+        assertTrue(auth.contains("BTCPay login expired; scan login QR again"));
+        assertTrue(auth.contains("missing store-settings permission"));
+        assertTrue(auth.contains("ApiOrigin.sameOrigin(configuredOrigin, apiUrl)"));
+        assertFalse(main.contains("putExtra(\"Cookie\""));
+        assertFalse(main.contains("putString(\"Cookie\""));
+        assertFalse(main.contains("Log."));
+        assertFalse(auth.contains("Log."));
+        assertFalse(auth.contains("Intent"));
+        assertFalse(auth.contains("SharedPreferences"));
+    }
+
     @Test public void manifestHasOnlyNonExportedCanonicalRewardsScanner() throws Exception {
         String manifest = source("src/main/AndroidManifest.xml");
         int first = manifest.indexOf(".RewardsProfileScanActivity");

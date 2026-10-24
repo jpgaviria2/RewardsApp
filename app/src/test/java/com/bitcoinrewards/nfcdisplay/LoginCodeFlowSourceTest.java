@@ -46,6 +46,16 @@ public class LoginCodeFlowSourceTest {
         assertFalse(main.contains("session_cookies"));
     }
 
+    @Test public void successfulLoginScanReplacesStaleMainActivity() throws Exception {
+        String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
+        String manifest = source("src/main/AndroidManifest.xml");
+        assertTrue(settings.contains("main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)"));
+        assertTrue(settings.indexOf("OneTimeLoginHandoff.publish(loginUrl)")
+            < settings.indexOf("main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)"));
+        assertFalse(settings.contains("Intent.FLAG_ACTIVITY_SINGLE_TOP"));
+        assertFalse(manifest.contains("android:launchMode=\"singleTop\""));
+    }
+
     @Test public void exportedMainActivityNeverAcceptsExternalSecretUrls() throws Exception {
         String manifest = source("src/main/AndroidManifest.xml");
         String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
