@@ -44,6 +44,19 @@ public class MainFrameLoadGateTest {
         assertFalse(MainFrameLoadGate.isHttpFailure(600));
     }
 
+    @Test public void onlyTemporaryServerAndRateFailuresAreRetried() {
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(408));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(425));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(429));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(500));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(502));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(503));
+        assertTrue(MainFrameLoadGate.isTransientHttpFailure(504));
+        assertFalse(MainFrameLoadGate.isTransientHttpFailure(401));
+        assertFalse(MainFrameLoadGate.isTransientHttpFailure(403));
+        assertFalse(MainFrameLoadGate.isTransientHttpFailure(404));
+    }
+
     @Test public void staleOrMissingCompletionCannotOpenGate() {
         MainFrameLoadGate gate = new MainFrameLoadGate();
         gate.onPageStarted(DISPLAY_URL);

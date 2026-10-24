@@ -27,4 +27,9 @@ final class MainFrameLoadGate {
     static boolean isHttpFailure(int statusCode) {
         return statusCode >= 400 && statusCode <= 599;
     }
+
+    static boolean isTransientHttpFailure(int statusCode) {
+        return statusCode == 408 || statusCode == 425 || statusCode == 429
+            || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504;
+    }
 }

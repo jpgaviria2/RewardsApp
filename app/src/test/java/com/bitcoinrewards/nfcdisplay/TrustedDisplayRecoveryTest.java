@@ -19,29 +19,37 @@ public class TrustedDisplayRecoveryTest {
         List<String> loads = new ArrayList<>();
         TrustedDisplayRecovery recovery = recovery(scheduler, loads);
 
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
-        assertEquals(1000L, scheduler.last().delayMs);
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
+        assertTrue(recovery.isRecovering());
+        assertEquals(1500L, scheduler.last().delayMs);
         scheduler.runLast();
 
         assertEquals(Arrays.asList(DISPLAY), loads);
+        assertTrue(recovery.isRecovering());
     }
 
-    @Test public void repeatedFailuresUseBoundedBackoffAndAttemptLimit() {
+    @Test public void repeatedFailuresUseLongBoundedBackoffAndAttemptLimit() {
         FakeScheduler scheduler = new FakeScheduler();
         List<String> loads = new ArrayList<>();
         TrustedDisplayRecovery recovery = recovery(scheduler, loads);
-        long[] expectedDelays = { 1000L, 2000L, 4000L, 8000L, 8000L };
+        long[] initialDelays = { 1500L, 3000L, 6000L, 12000L, 24000L, 30000L };
 
-        for (long expectedDelay : expectedDelays) {
-            assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        for (long expectedDelay : initialDelays) {
+            assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
             assertEquals(expectedDelay, scheduler.last().delayMs);
             scheduler.runLast();
             recovery.onPageStarted(DISPLAY);
         }
+        for (int attempt = initialDelays.length; attempt < 30; attempt++) {
+            assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
+            assertEquals(30000L, scheduler.last().delayMs);
+            scheduler.runLast();
+            recovery.onPageStarted(DISPLAY);
+        }
 
-        assertFalse(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
-        assertEquals(5, loads.size());
-        assertEquals(5, scheduler.entries.size());
+        assertFalse(recovery.onTransientMainFrameFailure(DISPLAY));
+        assertEquals(30, loads.size());
+        assertEquals(30, scheduler.entries.size());
     }
 
     @Test public void successfulCompletionCancelsPendingRetryAndResetsBackoff() {
@@ -49,15 +57,16 @@ public class TrustedDisplayRecoveryTest {
         List<String> loads = new ArrayList<>();
         TrustedDisplayRecovery recovery = recovery(scheduler, loads);
 
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
         FakeScheduler.Entry stale = scheduler.last();
         recovery.onSuccessfulCompletion(DISPLAY);
         assertTrue(stale.cancelled);
+        assertFalse(recovery.isRecovering());
         stale.runEvenIfCancelled();
         assertTrue(loads.isEmpty());
 
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
-        assertEquals(1000L, scheduler.last().delayMs);
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
+        assertEquals(1500L, scheduler.last().delayMs);
     }
 
     @Test public void duplicateAndLifecycleStaleCallbacksCannotRetry() {
@@ -65,21 +74,22 @@ public class TrustedDisplayRecoveryTest {
         List<String> loads = new ArrayList<>();
         TrustedDisplayRecovery recovery = recovery(scheduler, loads);
 
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
-        assertFalse(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
+        assertFalse(recovery.onTransientMainFrameFailure(DISPLAY));
         assertEquals(1, scheduler.entries.size());
         scheduler.runLast();
         assertEquals(Arrays.asList(DISPLAY), loads);
-        assertFalse(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertFalse(recovery.onTransientMainFrameFailure(DISPLAY));
 
         recovery.onPageStarted(DISPLAY);
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
         FakeScheduler.Entry stale = scheduler.last();
         recovery.destroy();
         assertTrue(stale.cancelled);
         stale.runEvenIfCancelled();
         assertEquals(Arrays.asList(DISPLAY), loads);
-        assertFalse(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertFalse(recovery.isRecovering());
+        assertFalse(recovery.onTransientMainFrameFailure(DISPLAY));
     }
 
     @Test public void loginExchangeSecretIsNeverScheduledOrReplayed() {
@@ -87,9 +97,9 @@ public class TrustedDisplayRecoveryTest {
         List<String> loads = new ArrayList<>();
         TrustedDisplayRecovery recovery = recovery(scheduler, loads);
 
-        assertFalse(recovery.onMainFrameNetworkOrTlsFailure(LOGIN));
+        assertFalse(recovery.onTransientMainFrameFailure(LOGIN));
         assertTrue(scheduler.entries.isEmpty());
-        assertTrue(recovery.onMainFrameNetworkOrTlsFailure(DISPLAY));
+        assertTrue(recovery.onTransientMainFrameFailure(DISPLAY));
         scheduler.runLast();
 
         assertEquals(Arrays.asList(DISPLAY), loads);
@@ -98,7 +108,7 @@ public class TrustedDisplayRecoveryTest {
     }
 
     private static TrustedDisplayRecovery recovery(FakeScheduler scheduler, List<String> loads) {
-        return new TrustedDisplayRecovery(DISPLAY, 5, 1000L, 8000L, scheduler, () -> loads.add(DISPLAY));
+        return new TrustedDisplayRecovery(DISPLAY, 30, 1500L, 30000L, scheduler, () -> loads.add(DISPLAY));
     }
 
     private static final class FakeScheduler implements TrustedDisplayRecovery.Scheduler {

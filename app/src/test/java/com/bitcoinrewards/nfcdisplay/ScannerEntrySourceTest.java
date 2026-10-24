@@ -73,7 +73,11 @@ public class ScannerEntrySourceTest {
         assertTrue(main.contains("MainFrameLoadGate.isHttpFailure(response.getStatusCode())"));
         assertTrue(main.contains("mainFrameLoadGate.onMainFrameLoadFailed();"));
         assertTrue(main.contains("scannerPageEligible = false;\n        updateInlineScannerState();"));
-        assertTrue(main.contains("trustedDisplayRecovery.onMainFrameNetworkOrTlsFailure(failingUrl)"));
+        assertTrue(main.contains("trustedDisplayRecovery.onTransientMainFrameFailure(failingUrl)"));
+        assertTrue(main.contains("MainFrameLoadGate.isTransientHttpFailure(response.getStatusCode())"));
+        assertTrue(main.contains("retryScheduled || trustedDisplayRecovery.isRecovering()"));
+        String recoveryUi = source("src/main/java/com/bitcoinrewards/nfcdisplay/DisplayRecoveryUiState.java");
+        assertTrue(recoveryUi.contains("Could not reconnect to BTCPay. Check the server and Wi-Fi"));
         assertTrue(main.contains("handler.cancel()"));
         assertTrue(main.contains("mainFrameLoadGate.isLikelyLegacyMainFrameError(failingUrl, currentUrl)"));
         assertFalse(main.contains("handler.proceed()"));

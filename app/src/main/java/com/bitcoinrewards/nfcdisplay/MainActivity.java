@@ -50,9 +50,9 @@ public class MainActivity extends Activity {
     private static final int CAMERA_PERMISSION_REQUEST = 5501;
     private static final long DUPLICATE_SCAN_WINDOW_MS = 15_000L;
     private static final String LEGACY_INLINE_DEVICE_ID = "rewards-nfc-display-inline";
-    private static final int DISPLAY_RETRY_ATTEMPTS = 5;
-    private static final long DISPLAY_RETRY_INITIAL_MS = 1_000L;
-    private static final long DISPLAY_RETRY_MAX_MS = 8_000L;
+    private static final int DISPLAY_RETRY_ATTEMPTS = 30;
+    private static final long DISPLAY_RETRY_INITIAL_MS = 1_500L;
+    private static final long DISPLAY_RETRY_MAX_MS = 30_000L;
 
     private WebView webView;
     private TextView loadingText;
@@ -63,6 +63,7 @@ public class MainActivity extends Activity {
     private boolean loginExchange;
     private Handler recoveryHandler;
     private TrustedDisplayRecovery trustedDisplayRecovery;
+    private final DisplayRecoveryUiState displayRecoveryUiState = new DisplayRecoveryUiState();
 
     private LinearLayout rewardsScannerPanel;
     private DecoratedBarcodeView inlineRewardsScanner;
@@ -161,6 +162,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView view, String url, Bitmap icon) {
                 mainFrameLoadGate.onPageStarted(url);
                 trustedDisplayRecovery.onPageStarted(url);
+                if (trustedDisplayUrl.equals(url)) displayRecoveryUiState.onTrustedDisplayLoadStarted();
                 scannerPageEligible = false;
                 updateInlineScannerState();
                 super.onPageStarted(view, url, icon);
@@ -190,7 +192,9 @@ public class MainActivity extends Activity {
             public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (request != null && request.isForMainFrame() && response != null
                     && MainFrameLoadGate.isHttpFailure(response.getStatusCode())) {
-                    failMainFrameLoad(request.getUrl().toString(), false);
+                    failMainFrameLoad(
+                        request.getUrl().toString(),
+                        MainFrameLoadGate.isTransientHttpFailure(response.getStatusCode()));
                 }
             }
 
@@ -217,6 +221,7 @@ public class MainActivity extends Activity {
                 boolean successfulMainFrame = mainFrameLoadGate.isSuccessfulCompletion(url);
                 if (successfulMainFrame && trustedDisplayUrl.equals(url)) {
                     trustedDisplayRecovery.onSuccessfulCompletion(url);
+                    displayRecoveryUiState.onSuccessfulTrustedDisplay();
                 }
                 if (loginExchange && successfulMainFrame && trustedDisplayUrl.equals(url)) {
                     view.clearHistory();
@@ -226,6 +231,12 @@ public class MainActivity extends Activity {
                 scannerPageEligible = successfulMainFrame
                     && rewardsPagePolicy.isEligiblePageCompletion(url, view.getUrl());
                 updateInlineScannerState();
+                if (!successfulMainFrame && displayRecoveryUiState.shouldHoldFailureUi()) {
+                    loadingText.setText(displayRecoveryUiState.message());
+                    loadingText.setVisibility(View.VISIBLE);
+                    view.setVisibility(View.INVISIBLE);
+                    return;
+                }
                 if (scannerPageEligible) updateScannerPanelHeightForPage(view);
                 loadingText.setVisibility(View.GONE);
                 view.setVisibility(View.VISIBLE);
@@ -241,7 +252,11 @@ public class MainActivity extends Activity {
         scannerPageEligible = false;
         updateInlineScannerState();
         if (recoverableNetworkOrTlsFailure) {
-            trustedDisplayRecovery.onMainFrameNetworkOrTlsFailure(failingUrl);
+            boolean retryScheduled = trustedDisplayRecovery.onTransientMainFrameFailure(failingUrl);
+            displayRecoveryUiState.onTransientFailure(retryScheduled || trustedDisplayRecovery.isRecovering());
+            loadingText.setText(displayRecoveryUiState.message());
+            loadingText.setVisibility(View.VISIBLE);
+            if (webView != null) webView.setVisibility(View.INVISIBLE);
         }
     }
 

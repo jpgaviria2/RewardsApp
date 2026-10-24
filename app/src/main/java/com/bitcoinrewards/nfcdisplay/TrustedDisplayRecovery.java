@@ -38,7 +38,7 @@ final class TrustedDisplayRecovery {
         this.retryTarget = retryTarget;
     }
 
-    boolean onMainFrameNetworkOrTlsFailure(String failingUrl) {
+    boolean onTransientMainFrameFailure(String failingUrl) {
         if (!active || !trustedDisplayUrl.equals(failingUrl) || pendingRetry != null
             || retryLoadInFlight || attempts >= maxAttempts) return false;
 
@@ -71,6 +71,10 @@ final class TrustedDisplayRecovery {
         active = false;
         cancelPendingRetry();
         retryLoadInFlight = false;
+    }
+
+    boolean isRecovering() {
+        return active && (pendingRetry != null || retryLoadInFlight);
     }
 
     private long delayForAttempt(int attempt) {

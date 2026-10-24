@@ -1,7 +1,7 @@
-# Rewards NFC Display 2.13.4
+# Rewards NFC Display 2.13.5
 
-- Automatically retries the exact configured rewards display after transient main-frame network or TLS failures, using bounded exponential backoff.
-- Cancels stale retries after a successful display load or when the activity is destroyed.
-- Never bypasses Android TLS validation and never replays a consume-once BTCPay Login Code URL.
-- Keeps the inline customer scanner hidden until the trusted rewards display completes successfully.
-- Continues rejecting fixed BOLT11 invoices and now explains that rewards require a reusable Lightning address or LNURL-pay QR.
+- Restores the longer restart-recovery window that previously kept kiosk displays alive through BTCPay and StartOS service restarts.
+- Retries temporary HTTP 408, 425, 429, 500, 502, 503, and 504 responses as well as main-frame network and TLS failures.
+- Uses bounded backoff for up to 30 attempts, reaching a 30-second interval instead of stopping after roughly 23 seconds.
+- Keeps the scanner and failed Chromium page hidden while reconnecting to the exact configured rewards display.
+- Never retries authentication, permission, or not-found responses; bypasses TLS validation; or replays a consume-once Login Code URL.
