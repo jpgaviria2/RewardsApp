@@ -38,7 +38,10 @@ final class WalletQrPayloadParser {
         if(value.regionMatches(true,0,"lightning:",0,10)){value=value.substring(10);if(value.isEmpty()||value.regionMatches(true,0,"lightning:",0,10))throw invalid();}
         if(value.length()<=128&&LIGHTNING_ADDRESS.matcher(value).matches())return new ParsedPayload(Kind.LIGHTNING_ADDRESS,value.toLowerCase(Locale.ROOT),exact,null,addressLabel(value));
         URI endpoint=strictHttps(decodeUtf8(decodeLnurl(value)));
-        return new ParsedPayload(Kind.LNURL_PAY,value,exact,endpoint,boundedLabel("LNURL-pay candidate • "+normalizedHost(endpoint.getHost())+safePath(endpoint)));
+        // Keep the endpoint for server submission and audit, but never put an opaque
+        // LNURL or callback path on the customer-facing kiosk.
+        safePath(endpoint);
+        return new ParsedPayload(Kind.LNURL_PAY,value,exact,endpoint,"Wallet");
     }
 
     static String userFacingRejection(String raw){
@@ -63,7 +66,7 @@ final class WalletQrPayloadParser {
     private static String safePath(URI uri){String path=uri.getRawPath();if(path==null||"/".equals(path))return"";for(int offset=0;offset<path.length();){int cp=path.codePointAt(offset),type=Character.getType(cp);if(Character.isISOControl(cp)||type==Character.FORMAT||type==Character.LINE_SEPARATOR||type==Character.PARAGRAPH_SEPARATOR||type==Character.PRIVATE_USE||type==Character.UNASSIGNED||type==Character.SURROGATE)throw invalid();offset+=Character.charCount(cp);}return truncateCodePoints(path,40);}
     private static String boundedLabel(String value){return truncateCodePoints(value,256);}
     private static String truncateCodePoints(String value,int max){int count=value.codePointCount(0,value.length());if(count<=max)return value;int end=value.offsetByCodePoints(0,max-1);return value.substring(0,end)+"…";}
-    private static String addressLabel(String value){int at=value.indexOf('@');if(at<=1)return"Lightning address";String local=value.substring(0,at),domain=value.substring(at+1);return local.substring(0,Math.min(3,local.length()))+"…@"+domain;}
+    private static String addressLabel(String value){int at=value.indexOf('@');if(at<1)return"Wallet";return truncateCodePoints(value.substring(0,at),24);}
     private static String sha256(byte[] value){try{byte[] digest=MessageDigest.getInstance("SHA-256").digest(value);StringBuilder out=new StringBuilder(64);for(byte item:digest)out.append(String.format(Locale.ROOT,"%02x",item&255));return out.toString();}catch(Exception e){throw new IllegalStateException(e);}}
     private static boolean checksum(String hrp,int[] data){int p=1;for(int i=0;i<hrp.length();i++)p=step(p)^(hrp.charAt(i)>>5);p=step(p);for(int i=0;i<hrp.length();i++)p=step(p)^(hrp.charAt(i)&31);for(int word:data)p=step(p)^word;return p==1;}
     private static int step(int pre){int bottom=pre>>>25,value=(pre&0x1ffffff)<<5;if((bottom&1)!=0)value^=0x3b6a57b2;if((bottom&2)!=0)value^=0x26508e6d;if((bottom&4)!=0)value^=0x1ea119fa;if((bottom&8)!=0)value^=0x3d4233dd;if((bottom&16)!=0)value^=0x2a1462b3;return value;}
