@@ -1,7 +1,7 @@
-# Rewards NFC Display 2.13.5
+# Rewards NFC Display 2.13.6
 
-- Restores the longer restart-recovery window that previously kept kiosk displays alive through BTCPay and StartOS service restarts.
-- Retries temporary HTTP 408, 425, 429, 500, 502, 503, and 504 responses as well as main-frame network and TLS failures.
-- Uses bounded backoff for up to 30 attempts, reaching a 30-second interval instead of stopping after roughly 23 seconds.
-- Keeps the scanner and failed Chromium page hidden while reconnecting to the exact configured rewards display.
-- Never retries authentication, permission, or not-found responses; bypasses TLS validation; or replays a consume-once Login Code URL.
+- Adds NFC reader-mode check-in for standards-compliant NTAG424 Boltcards.
+- Reads the card's bounded dynamic `lnurlw` NDEF URI and submits it only to the authenticated same-origin Bitcoin Rewards endpoint.
+- Keeps Lightning-address and LNURL-pay QR scanning available as the fallback customer check-in flow.
+- Disables NFC during login, recovery, submission, pause, and destruction while preserving the 30-attempt BTCPay/StartOS restart-recovery behavior from 2.13.5.
+- Never contacts the card provider directly, invokes an LNURL-withdraw callback, stores card keys, bypasses TLS validation, or replays a consume-once BTCPay Login Code URL.

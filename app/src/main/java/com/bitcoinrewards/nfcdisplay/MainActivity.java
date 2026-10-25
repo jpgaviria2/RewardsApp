@@ -8,6 +8,13 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.http.SslError;
 import android.hardware.Camera;
+import android.nfc.NdefMessage;
+import android.nfc.NdefRecord;
+import android.nfc.NfcAdapter;
+import android.nfc.Tag;
+import android.nfc.tech.IsoDep;
+import android.nfc.tech.Ndef;
+import android.nfc.tech.NdefFormatable;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
@@ -80,6 +87,9 @@ public class MainActivity extends Activity {
     private String lastSubmittedValue;
     private long lastSubmittedAtMs;
     private SubmitInlineCheckInTask submitTask;
+    private NfcAdapter nfcAdapter;
+    private boolean nfcReaderEnabled;
+    private final NfcReaderGate nfcReaderGate = new NfcReaderGate();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -131,6 +141,7 @@ public class MainActivity extends Activity {
         flipInlineCameraButton = findViewById(R.id.btn_flip_inline_camera);
         flipInlineCameraButton.setOnClickListener(v -> flipInlineRewardsCamera());
         inlineRewardsScanner.setStatusText("");
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         ImageButton settings = findViewById(R.id.btn_settings);
         settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
 
@@ -304,6 +315,7 @@ public class MainActivity extends Activity {
     }
 
     private void updateInlineScannerState() {
+        updateNfcReaderState();
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         if (!scannerPageEligible) {
             rewardsScannerPanel.setVisibility(View.GONE);
@@ -393,10 +405,104 @@ public class MainActivity extends Activity {
             setRewardsScannerStatus("Saving " + payload.displayLabel() + "...");
             vibrate(80);
             pauseInlineRewardsScanner();
+            updateNfcReaderState();
             submitTask = new SubmitInlineCheckInTask(payload);
             submitTask.execute();
         }
     };
+
+    private void updateNfcReaderState() {
+        if (nfcAdapter == null) return;
+        nfcReaderGate.update(
+            activityResumed,
+            scannerPageEligible,
+            trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
+            inlineAuthenticationFailure != null,
+            inlineSubmissionInFlight);
+        boolean shouldEnable = nfcReaderGate.shouldEnable();
+        try {
+            if (shouldEnable && !nfcReaderEnabled) {
+                Bundle options = new Bundle();
+                options.putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 250);
+                nfcAdapter.enableReaderMode(
+                    this,
+                    this::onNfcTagDiscovered,
+                    NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B
+                        | NfcAdapter.FLAG_READER_NO_PLATFORM_SOUNDS,
+                    options);
+                nfcReaderEnabled = true;
+            } else if (!shouldEnable && nfcReaderEnabled) {
+                nfcAdapter.disableReaderMode(this);
+                nfcReaderEnabled = false;
+            }
+        } catch (IllegalStateException e) {
+            nfcReaderEnabled = false;
+        }
+    }
+
+    private void disableNfcReader() {
+        if (nfcAdapter == null || !nfcReaderEnabled) return;
+        try { nfcAdapter.disableReaderMode(this); }
+        catch (IllegalStateException ignored) { }
+        nfcReaderEnabled = false;
+    }
+
+    private void onNfcTagDiscovered(Tag tag) {
+        final String boltcardUrl;
+        try {
+            boltcardUrl = readBoltcardUrl(tag);
+        } catch (Exception e) {
+            runOnUiThread(() -> {
+                if (nfcReaderGate.shouldEnable()) setRewardsScannerStatus("Tap a standard LNbits Boltcard.");
+            });
+            return;
+        }
+        runOnUiThread(() -> submitBoltcardTap(boltcardUrl));
+    }
+
+    private String readBoltcardUrl(Tag tag) throws Exception {
+        if (tag == null) throw new IllegalArgumentException("Missing NFC tag");
+        Ndef ndef = Ndef.get(tag);
+        if (ndef == null) {
+            // Type 4 Boltcard tags expose both IsoDep and Ndef. NdefFormatable/sole IsoDep
+            // tags have no standard readable NDEF message, so never fall back to raw APDUs.
+            if (NdefFormatable.get(tag) != null || IsoDep.get(tag) != null) {
+                throw new IllegalArgumentException("NFC tag does not expose readable NDEF");
+            }
+            throw new IllegalArgumentException("NFC tag is not NDEF");
+        }
+        try {
+            ndef.connect();
+            NdefMessage message = ndef.getNdefMessage();
+            if (message == null || message.toByteArray().length > BoltcardPayloadParser.MAX_NDEF_BYTES) {
+                throw new IllegalArgumentException("Invalid NDEF message");
+            }
+            NdefRecord[] records = message.getRecords();
+            if (records == null || records.length != 1 || records.length > BoltcardPayloadParser.MAX_NDEF_RECORDS) {
+                throw new IllegalArgumentException("Boltcard must contain one URI record");
+            }
+            NdefRecord record = records[0];
+            return BoltcardPayloadParser.requireBoltcard(BoltcardPayloadParser.extractUri(
+                record.getTnf(), record.getType(), record.getPayload()));
+        } finally {
+            try { ndef.close(); } catch (Exception ignored) { }
+        }
+    }
+
+    private void submitBoltcardTap(String boltcardUrl) {
+        if (!activityResumed || !nfcReaderGate.shouldEnable() || inlineSubmissionInFlight || !scannerPageEligible) return;
+        long now = System.currentTimeMillis();
+        if (boltcardUrl.equals(lastSubmittedValue) && now - lastSubmittedAtMs < DUPLICATE_SCAN_WINDOW_MS) return;
+        inlineSubmissionInFlight = true;
+        lastSubmittedValue = boltcardUrl;
+        lastSubmittedAtMs = now;
+        setRewardsScannerStatus("Saving Boltcard tap...");
+        vibrate(80);
+        pauseInlineRewardsScanner();
+        updateNfcReaderState();
+        submitTask = new SubmitInlineCheckInTask(boltcardUrl);
+        submitTask.execute();
+    }
 
     private void setRewardsScannerStatus(String text) {
         if (rewardsScannerStatus != null) rewardsScannerStatus.setText(text);
@@ -416,18 +522,28 @@ public class MainActivity extends Activity {
     @SuppressLint("StaticFieldLeak")
     private final class SubmitInlineCheckInTask extends AsyncTask<Void, Void, Boolean> {
         private final WalletQrPayloadParser.ParsedPayload payload;
+        private final String boltcardUrl;
         private int responseCode;
         private boolean loginExpired;
 
         SubmitInlineCheckInTask(WalletQrPayloadParser.ParsedPayload payload) {
             this.payload = payload;
+            this.boltcardUrl = null;
+        }
+
+        SubmitInlineCheckInTask(String boltcardUrl) {
+            this.payload = null;
+            this.boltcardUrl = boltcardUrl;
         }
 
         @Override protected Boolean doInBackground(Void... ignored) {
             HttpURLConnection connection = null;
             try {
-                String apiUrl = SettingsActivity.getLegacyCheckInUrl(MainActivity.this);
-                if (apiUrl == null || apiUrl.isEmpty() || isCancelled()) return false;
+                String legacyApiUrl = SettingsActivity.getLegacyCheckInUrl(MainActivity.this);
+                if (legacyApiUrl == null || legacyApiUrl.isEmpty() || isCancelled()) return false;
+                String apiUrl = boltcardUrl == null
+                    ? legacyApiUrl
+                    : BoltcardCheckInEndpoint.fromLegacyCheckInUrl(legacyApiUrl);
                 String cookie = InlineCheckInAuthentication.cookieForTrustedApi(
                     SettingsActivity.getBtcpayUrl(MainActivity.this),
                     apiUrl,
@@ -437,7 +553,8 @@ public class MainActivity extends Activity {
                     return false;
                 }
                 JSONObject body = new JSONObject();
-                body.put("lightningAddress", payload.value);
+                if (boltcardUrl == null) body.put("lightningAddress", payload.value);
+                else body.put("boltcardUrl", boltcardUrl);
                 body.put("deviceId", LEGACY_INLINE_DEVICE_ID);
 
                 connection = (HttpURLConnection) new URL(apiUrl).openConnection();
@@ -472,14 +589,16 @@ public class MainActivity extends Activity {
                 return;
             }
             if (ok) {
-                setRewardsScannerStatus("Ready to reward " + payload.displayLabel());
-                Toast.makeText(MainActivity.this, "Rewards profile saved: " + payload.displayLabel(), Toast.LENGTH_LONG).show();
+                String label = boltcardUrl == null ? payload.displayLabel() : "Boltcard";
+                setRewardsScannerStatus(boltcardUrl == null ? "Ready to reward " + label : "Ready to reward");
+                Toast.makeText(MainActivity.this, "Rewards profile saved: " + label, Toast.LENGTH_LONG).show();
                 vibrate(180);
                 if (webView != null) webView.reload();
-            } else if (payload.kind == WalletQrPayloadParser.Kind.LNURL_PAY && responseCode >= 400) {
+            } else if (payload != null && payload.kind == WalletQrPayloadParser.Kind.LNURL_PAY && responseCode >= 400) {
                 updateInlineScannerState();
                 setRewardsScannerStatus("LNURL-pay is not accepted by this server yet (HTTP " + responseCode + ").");
             } else {
+                if (boltcardUrl != null && boltcardUrl.equals(lastSubmittedValue)) lastSubmittedValue = null;
                 updateInlineScannerState();
                 setRewardsScannerStatus(responseCode >= 400
                     ? "BTCPay rejected check-in (HTTP " + responseCode + ")."
@@ -490,6 +609,7 @@ public class MainActivity extends Activity {
         @Override protected void onCancelled() {
             if (submitTask == this) submitTask = null;
             inlineSubmissionInFlight = false;
+            updateInlineScannerState();
         }
     }
 
@@ -501,11 +621,20 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         activityResumed = false;
+        nfcReaderGate.update(false, scannerPageEligible,
+            trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
+            inlineAuthenticationFailure != null, inlineSubmissionInFlight);
+        disableNfcReader();
         pauseInlineRewardsScanner();
         super.onPause();
     }
 
     @Override protected void onDestroy() {
+        activityResumed = false;
+        nfcReaderGate.update(false, scannerPageEligible,
+            trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
+            inlineAuthenticationFailure != null, inlineSubmissionInFlight);
+        disableNfcReader();
         if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();
         if (submitTask != null) submitTask.cancel(true);
         submitTask = null;
