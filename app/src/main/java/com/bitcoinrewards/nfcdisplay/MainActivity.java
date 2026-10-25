@@ -151,7 +151,9 @@ public class MainActivity extends Activity {
         flipInlineCameraButton.setOnClickListener(v -> flipInlineRewardsCamera());
         inlineRewardsScanner.setStatusText("");
         tutorialVideo = new WalletTutorialVideoController(
-            this, (TextureView) findViewById(R.id.wallet_tutorial_video));
+            this,
+            (TextureView) findViewById(R.id.wallet_tutorial_video),
+            findViewById(R.id.wallet_tutorial_poster));
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         ImageButton settings = findViewById(R.id.btn_settings);
         settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.SurfaceTexture;
 import android.media.MediaPlayer;
+import android.view.View;
 import android.view.Surface;
 import android.view.TextureView;
 
@@ -13,13 +14,16 @@ import java.io.IOException;
 final class WalletTutorialVideoController implements TextureView.SurfaceTextureListener {
     private final Context context;
     private final TextureView view;
+    private final View poster;
     private MediaPlayer player;
     private Surface surface;
     private boolean active;
 
-    WalletTutorialVideoController(Context context, TextureView view) {
+    WalletTutorialVideoController(Context context, TextureView view, View poster) {
         this.context = context.getApplicationContext();
         this.view = view;
+        this.poster = poster;
+        showPoster();
         view.setSurfaceTextureListener(this);
         if (view.isAvailable()) prepare(view.getSurfaceTexture());
     }
@@ -37,6 +41,7 @@ final class WalletTutorialVideoController implements TextureView.SurfaceTextureL
 
     void release() {
         active = false;
+        showPoster();
         if (player != null) {
             player.setOnPreparedListener(null);
             player.release();
@@ -50,6 +55,7 @@ final class WalletTutorialVideoController implements TextureView.SurfaceTextureL
 
     private void prepare(SurfaceTexture texture) {
         if (texture == null || player != null) return;
+        showPoster();
         surface = new Surface(texture);
         MediaPlayer next = new MediaPlayer();
         try (AssetFileDescriptor asset = context.getResources().openRawResourceFd(R.raw.wallet_rewards_tutorial)) {
@@ -68,6 +74,7 @@ final class WalletTutorialVideoController implements TextureView.SurfaceTextureL
             });
             next.prepareAsync();
         } catch (Exception e) {
+            showPoster();
             if (player == next) player = null;
             next.release();
             if (surface != null) {
@@ -88,5 +95,11 @@ final class WalletTutorialVideoController implements TextureView.SurfaceTextureL
         return true;
     }
 
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) { }
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture surfaceTexture) {
+        if (poster != null) poster.setVisibility(View.GONE);
+    }
+
+    private void showPoster() {
+        if (poster != null) poster.setVisibility(View.VISIBLE);
+    }
 }
