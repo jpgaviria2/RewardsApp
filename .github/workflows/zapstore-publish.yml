@@ -1,0 +1,61 @@
+name: Publish Zapstore
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output rewards-nfc-display-2.13.6-production.apk \
+            https://github.com/jpgaviria2/RewardsApp/releases/download/v2.13.6/rewards-nfc-display-2.13.6-production.apk
+          echo '6a1875d95effc84249b01b36e49aa739df7182620eb40480e56cb4b97d48f178  rewards-nfc-display-2.13.6-production.apk' | sha256sum --check --strict
+
+      - name: Install verified publishing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output nak \
+            https://github.com/fiatjaf/nak/releases/download/v0.21.2/nak-nodb-v0.21.2-linux-amd64
+          echo 'e2fbbdf24cda6fae99c777f11003e0b517b43ac1a40224c78fa87a051354e394  nak' | sha256sum --check --strict
+          chmod +x nak
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output zsp \
+            https://github.com/zapstore/zsp/releases/download/v0.4.17/zsp-0.4.17-linux-amd64
+          echo '3f241da6a5dc7a85fe851d3b42b77790b651bd36c7029382a701262bda832d20  zsp' | sha256sum --check --strict
+          chmod +x zsp
+
+      - name: Upload APK to Zapstore CDN
+        env:
+          NOSTR_SECRET_KEY: ${{ secrets.ZAPSTORE_NSEC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./nak blossom upload -s https://cdn.zapstore.dev rewards-nfc-display-2.13.6-production.apk
+          curl --fail --location --retry 10 --retry-all-errors \
+            --output downloaded.apk \
+            https://cdn.zapstore.dev/6a1875d95effc84249b01b36e49aa739df7182620eb40480e56cb4b97d48f178
+          echo '6a1875d95effc84249b01b36e49aa739df7182620eb40480e56cb4b97d48f178  downloaded.apk' | sha256sum --check --strict
+
+      - name: Publish Zapstore events
+        env:
+          SIGN_WITH: ${{ secrets.ZAPSTORE_NSEC }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./zsp publish --indexer-mode --overwrite-release zapstore.yaml
+          sleep 15
+          events="$(./nak req -k 30063 -d com.bitcoinrewards.nfcdisplay@2.13.6 -l 5 wss://relay.zapstore.dev)"
+          test -n "$events"
+          printf '%s\n' "$events"
