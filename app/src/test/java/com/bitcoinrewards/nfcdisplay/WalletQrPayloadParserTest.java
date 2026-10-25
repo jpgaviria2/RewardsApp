@@ -12,7 +12,7 @@ public class WalletQrPayloadParserTest {
         String raw=" \tLiGhTnInG:Alice@Example.COM\r\n";
         WalletQrPayloadParser.ParsedPayload parsed=WalletQrPayloadParser.parse(raw);
         assertEquals(WalletQrPayloadParser.Kind.LIGHTNING_ADDRESS,parsed.kind);assertEquals("alice@example.com",parsed.value);
-        assertEquals("Ali…@Example.COM",parsed.displayLabel());assertNull(parsed.lnurlEndpoint);
+        assertEquals("Alice",parsed.displayLabel());assertNull(parsed.lnurlEndpoint);
         assertArrayEquals(raw.getBytes(StandardCharsets.UTF_8),parsed.scanBytes);assertEquals(sha256(raw),parsed.scanSha256);
     }
 
@@ -21,7 +21,7 @@ public class WalletQrPayloadParserTest {
         WalletQrPayloadParser.ParsedPayload parsed=WalletQrPayloadParser.parse(raw);
         assertEquals(WalletQrPayloadParser.Kind.LNURL_PAY,parsed.kind);assertEquals(lnurl,parsed.value);
         assertEquals("https://pay.example/lnurlp/alice",parsed.lnurlEndpoint.toString());
-        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice",parsed.displayLabel());
+        assertEquals("Wallet",parsed.displayLabel());
         assertArrayEquals(raw.getBytes(StandardCharsets.UTF_8),parsed.scanBytes);assertEquals(sha256(raw),parsed.scanSha256);
     }
 
@@ -35,26 +35,31 @@ public class WalletQrPayloadParserTest {
         String decoded="HTTPS://pay.example/lnurlp/alice";String lnurl=encode(decoded);
         WalletQrPayloadParser.ParsedPayload parsed=WalletQrPayloadParser.parse(lnurl);
         assertEquals(lnurl,parsed.value);assertEquals(decoded,parsed.lnurlEndpoint.toString());
-        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice",parsed.displayLabel());
+        assertEquals("Wallet",parsed.displayLabel());
     }
 
     @Test public void decodedMixedCaseHostIsValidatedInCanonicalForm(){
         String decoded="https://Pay.Example/lnurlp/alice";String lnurl=encode(decoded);
         WalletQrPayloadParser.ParsedPayload parsed=WalletQrPayloadParser.parse(lnurl);
         assertEquals(lnurl,parsed.value);assertEquals(decoded,parsed.lnurlEndpoint.toString());
-        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice",parsed.displayLabel());
+        assertEquals("Wallet",parsed.displayLabel());
     }
 
-    @Test public void displayLabelUsesRawPathAndNeverCreatesControlsOrBrokenSurrogates(){
+    @Test public void displayLabelNeverLeaksLnurlEndpointOrCreatesControls(){
         WalletQrPayloadParser.ParsedPayload encodedControl=WalletQrPayloadParser.parse(encode("https://pay.example/lnurlp/alice%0Aadmin"));
-        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice%0Aadmin",encodedControl.displayLabel());
+        assertEquals("Wallet",encodedControl.displayLabel());
         assertFalse(encodedControl.displayLabel().contains("\n"));
 
         StringBuilder endpoint=new StringBuilder("https://pay.example/");
         for(int i=0;i<50;i++)endpoint.append("😀");
         String label=WalletQrPayloadParser.parse(encode(endpoint.toString())).displayLabel();
-        assertTrue(label.endsWith("…"));
+        assertEquals("Wallet",label);
         assertNoUnpairedSurrogates(label);
+    }
+
+    @Test public void lightningAddressLabelUsesLocalPartOnlyAndIsBounded(){
+        assertEquals("coffee.rewards",WalletQrPayloadParser.parse("coffee.rewards@example.com").displayLabel());
+        assertEquals("abcdefghijklmnopqrstuvw…",WalletQrPayloadParser.parse("abcdefghijklmnopqrstuvwxyz@example.com").displayLabel());
     }
 
     @Test public void onlyAsciiOuterWhitespaceAndOneWrapperAreAllowed(){

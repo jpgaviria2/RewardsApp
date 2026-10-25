@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="rewards_green">#173F2F</color>
+    <color name="rewards_green_dark">#0D2B20</color>
+    <color name="rewards_ink">#101820</color>
+    <color name="rewards_cream">#F4EDDF</color>
+    <color name="rewards_gold">#F2B84B</color>
+    <color name="rewards_success">#C9F25B</color>
+    <color name="rewards_error">#FF7A70</color>
+</resources>

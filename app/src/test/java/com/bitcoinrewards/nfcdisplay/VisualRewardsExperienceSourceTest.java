@@ -1,0 +1,44 @@
+package com.bitcoinrewards.nfcdisplay;
+
+import org.junit.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+public class VisualRewardsExperienceSourceTest {
+    private static String source(String relative) throws Exception {
+        return new String(Files.readAllBytes(Paths.get(relative)), StandardCharsets.UTF_8);
+    }
+
+    @Test public void tutorialIsBundledLocallyWithStaticFallback() throws Exception {
+        String controller=source("src/main/java/com/bitcoinrewards/nfcdisplay/WalletTutorialVideoController.java");
+        String layout=source("src/main/res/layout/activity_main.xml");
+        Path video=Paths.get("src/main/res/raw/wallet_rewards_tutorial.mp4");
+        Path poster=Paths.get("src/main/res/drawable-nodpi/wallet_rewards_tutorial_poster.jpg");
+        assertTrue(Files.isRegularFile(video));
+        assertTrue(Files.size(video)<400_000L);
+        assertTrue(Files.isRegularFile(poster));
+        assertTrue(controller.contains("openRawResourceFd(R.raw.wallet_rewards_tutorial)"));
+        assertFalse(controller.contains("setDataSource(\"http"));
+        assertTrue(layout.contains("@drawable/wallet_rewards_tutorial_poster"));
+    }
+
+    @Test public void captureOverlaysConsumeTouchesAndAuthenticationFailureRevealsGuidance() throws Exception {
+        String main=source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
+        String layout=source("src/main/res/layout/activity_main.xml");
+        assertTrue(layout.contains("android:id=\"@+id/nfc_tap_overlay\""));
+        assertTrue(layout.contains("android:id=\"@+id/nfc_reader_overlay\""));
+        assertTrue(count(layout,"android:clickable=\"true\"")>=2);
+        assertTrue(count(layout,"android:focusable=\"true\"")>=2);
+        assertTrue(main.contains("if (loginExpired) {\n                inlineAuthenticationFailure = InlineCheckInAuthentication.failureMessage(responseCode);\n                hideCaptureOverlays();"));
+        assertTrue(main.contains("if (!inlineSubmissionInFlight) hideCaptureOverlays();"));
+        assertTrue(main.contains("inlineSubmissionInFlight || captureConfirmationVisible"));
+    }
+
+    private static int count(String value,String needle){int count=0,offset=0;while((offset=value.indexOf(needle,offset))>=0){count++;offset+=needle.length();}return count;}
+}

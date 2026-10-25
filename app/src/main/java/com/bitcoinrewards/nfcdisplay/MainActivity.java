@@ -22,6 +22,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
 import android.view.View;
+import android.view.TextureView;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
@@ -75,7 +76,11 @@ public class MainActivity extends Activity {
     private LinearLayout rewardsScannerPanel;
     private DecoratedBarcodeView inlineRewardsScanner;
     private TextView rewardsScannerStatus;
+    private TextView submissionOverlay;
+    private TextView successOverlay;
+    private View tapActionCard;
     private Button flipInlineCameraButton;
+    private WalletTutorialVideoController tutorialVideo;
     private List<CameraFacingSelector.CameraDescriptor> availableRewardsCameras = new ArrayList<>();
     private int requestedRewardsCameraFacing = Camera.CameraInfo.CAMERA_FACING_FRONT;
     private CameraFacingSelector.Selection rewardsCameraSelection;
@@ -83,6 +88,7 @@ public class MainActivity extends Activity {
     private boolean activityResumed;
     private boolean inlineScannerRunning;
     private boolean inlineSubmissionInFlight;
+    private boolean captureConfirmationVisible;
     private String inlineAuthenticationFailure;
     private String lastSubmittedValue;
     private long lastSubmittedAtMs;
@@ -138,9 +144,14 @@ public class MainActivity extends Activity {
         rewardsScannerPanel = findViewById(R.id.rewards_scanner_panel);
         inlineRewardsScanner = findViewById(R.id.inline_rewards_scanner);
         rewardsScannerStatus = findViewById(R.id.rewards_scanner_status);
+        submissionOverlay = findViewById(R.id.nfc_tap_overlay);
+        successOverlay = findViewById(R.id.nfc_reader_overlay);
+        tapActionCard = findViewById(R.id.tap_action_card);
         flipInlineCameraButton = findViewById(R.id.btn_flip_inline_camera);
         flipInlineCameraButton.setOnClickListener(v -> flipInlineRewardsCamera());
         inlineRewardsScanner.setStatusText("");
+        tutorialVideo = new WalletTutorialVideoController(
+            this, (TextureView) findViewById(R.id.wallet_tutorial_video));
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         ImageButton settings = findViewById(R.id.btn_settings);
         settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
@@ -175,6 +186,7 @@ public class MainActivity extends Activity {
                 trustedDisplayRecovery.onPageStarted(url);
                 if (trustedDisplayUrl.equals(url)) displayRecoveryUiState.onTrustedDisplayLoadStarted();
                 scannerPageEligible = false;
+                if (!inlineSubmissionInFlight) hideCaptureOverlays();
                 updateInlineScannerState();
                 super.onPageStarted(view, url, icon);
             }
@@ -319,10 +331,15 @@ public class MainActivity extends Activity {
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         if (!scannerPageEligible) {
             rewardsScannerPanel.setVisibility(View.GONE);
+            setTutorialActive(false);
             pauseInlineRewardsScanner();
             return;
         }
         rewardsScannerPanel.setVisibility(View.VISIBLE);
+        boolean tutorialActive = activityResumed && !inlineSubmissionInFlight && !captureConfirmationVisible
+            && inlineAuthenticationFailure == null
+            && (trustedDisplayRecovery == null || !trustedDisplayRecovery.isRecovering());
+        setTutorialActive(tutorialActive);
         if (!hasCameraPermission()) {
             pauseInlineRewardsScanner();
             setRewardsScannerStatus("Camera permission is required for automatic rewards scanning.");
@@ -339,7 +356,7 @@ public class MainActivity extends Activity {
             setRewardsScannerStatus("No camera is available for automatic rewards scanning.");
             return;
         }
-        if (!activityResumed || inlineSubmissionInFlight) {
+        if (!activityResumed || inlineSubmissionInFlight || captureConfirmationVisible) {
             pauseInlineRewardsScanner();
             return;
         }
@@ -349,7 +366,8 @@ public class MainActivity extends Activity {
             inlineRewardsScanner.resume();
             inlineScannerRunning = true;
         }
-        setRewardsScannerStatus("Show wallet Lightning QR to camera");
+        setRewardsScannerStatus("Ready — tap a card or show a wallet QR");
+        pulseTapCard();
     }
 
     private void updateScannerPanelHeightForPage(WebView view) {
@@ -360,7 +378,7 @@ public class MainActivity extends Activity {
                 boolean rewardVisible = value != null && value.contains("\\\"hasQr\\\":true");
                 LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
                 params.weight = 0f;
-                params.height = dp(rewardVisible ? 240 : 270);
+                params.height = dp(rewardVisible ? 310 : 350);
                 rewardsScannerPanel.setLayoutParams(params);
             });
     }
@@ -402,7 +420,8 @@ public class MainActivity extends Activity {
             inlineSubmissionInFlight = true;
             lastSubmittedValue = payload.value;
             lastSubmittedAtMs = now;
-            setRewardsScannerStatus("Saving " + payload.displayLabel() + "...");
+            setRewardsScannerStatus("Connecting " + payload.displayLabel() + "…");
+            showSubmissionOverlay("Connecting your wallet…");
             vibrate(80);
             pauseInlineRewardsScanner();
             updateNfcReaderState();
@@ -418,7 +437,7 @@ public class MainActivity extends Activity {
             scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null,
-            inlineSubmissionInFlight);
+            inlineSubmissionInFlight || captureConfirmationVisible);
         boolean shouldEnable = nfcReaderGate.shouldEnable();
         try {
             if (shouldEnable && !nfcReaderEnabled) {
@@ -496,7 +515,8 @@ public class MainActivity extends Activity {
         inlineSubmissionInFlight = true;
         lastSubmittedValue = boltcardUrl;
         lastSubmittedAtMs = now;
-        setRewardsScannerStatus("Saving Boltcard tap...");
+        setRewardsScannerStatus("Reading your rewards card…");
+        showSubmissionOverlay("Reading rewards card…");
         vibrate(80);
         pauseInlineRewardsScanner();
         updateNfcReaderState();
@@ -506,6 +526,51 @@ public class MainActivity extends Activity {
 
     private void setRewardsScannerStatus(String text) {
         if (rewardsScannerStatus != null) rewardsScannerStatus.setText(text);
+    }
+
+    private void setTutorialActive(boolean active) {
+        if (tutorialVideo != null) tutorialVideo.setActive(active);
+    }
+
+    private void showSubmissionOverlay(String message) {
+        setTutorialActive(false);
+        if (successOverlay != null) successOverlay.setVisibility(View.GONE);
+        if (submissionOverlay != null) {
+            submissionOverlay.setText(message);
+            submissionOverlay.setAlpha(0f);
+            submissionOverlay.setVisibility(View.VISIBLE);
+            submissionOverlay.animate().alpha(1f).setDuration(160L).start();
+        }
+    }
+
+    private void showSuccessOverlay(String label) {
+        captureConfirmationVisible = true;
+        updateNfcReaderState();
+        if (submissionOverlay != null) submissionOverlay.setVisibility(View.GONE);
+        if (successOverlay == null) return;
+        String customer = label == null || label.isEmpty() ? "Wallet" : label;
+        successOverlay.setText("Wallet connected\n" + customer + "\nYou’re ready to earn rewards");
+        successOverlay.setScaleX(0.88f);
+        successOverlay.setScaleY(0.88f);
+        successOverlay.setAlpha(0f);
+        successOverlay.setVisibility(View.VISIBLE);
+        successOverlay.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200L).start();
+    }
+
+    private void hideCaptureOverlays() {
+        captureConfirmationVisible = false;
+        if (submissionOverlay != null) submissionOverlay.setVisibility(View.GONE);
+        if (successOverlay != null) successOverlay.setVisibility(View.GONE);
+    }
+
+    private void pulseTapCard() {
+        if (tapActionCard == null || tapActionCard.getAnimation() != null) return;
+        tapActionCard.animate().cancel();
+        tapActionCard.animate().scaleX(1.025f).scaleY(1.025f).setDuration(450L)
+            .withEndAction(() -> {
+                if (tapActionCard != null) tapActionCard.animate()
+                    .scaleX(1f).scaleY(1f).setDuration(450L).start();
+            }).start();
     }
 
     private int dp(int value) {
@@ -585,19 +650,25 @@ public class MainActivity extends Activity {
             inlineSubmissionInFlight = false;
             if (loginExpired) {
                 inlineAuthenticationFailure = InlineCheckInAuthentication.failureMessage(responseCode);
+                hideCaptureOverlays();
                 updateInlineScannerState();
                 return;
             }
             if (ok) {
-                String label = boltcardUrl == null ? payload.displayLabel() : "Boltcard";
-                setRewardsScannerStatus(boltcardUrl == null ? "Ready to reward " + label : "Ready to reward");
-                Toast.makeText(MainActivity.this, "Rewards profile saved: " + label, Toast.LENGTH_LONG).show();
+                String label = boltcardUrl == null ? payload.displayLabel() : "Rewards card";
+                setRewardsScannerStatus("Wallet connected — " + label);
+                showSuccessOverlay(label);
+                Toast.makeText(MainActivity.this, "Wallet connected: " + label, Toast.LENGTH_LONG).show();
                 vibrate(180);
-                if (webView != null) webView.reload();
+                recoveryHandler.postDelayed(() -> {
+                    if (!isFinishing() && webView != null) webView.reload();
+                }, 1_600L);
             } else if (payload != null && payload.kind == WalletQrPayloadParser.Kind.LNURL_PAY && responseCode >= 400) {
+                hideCaptureOverlays();
                 updateInlineScannerState();
                 setRewardsScannerStatus("LNURL-pay is not accepted by this server yet (HTTP " + responseCode + ").");
             } else {
+                hideCaptureOverlays();
                 if (boltcardUrl != null && boltcardUrl.equals(lastSubmittedValue)) lastSubmittedValue = null;
                 updateInlineScannerState();
                 setRewardsScannerStatus(responseCode >= 400
@@ -609,6 +680,7 @@ public class MainActivity extends Activity {
         @Override protected void onCancelled() {
             if (submitTask == this) submitTask = null;
             inlineSubmissionInFlight = false;
+            hideCaptureOverlays();
             updateInlineScannerState();
         }
     }
@@ -621,9 +693,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         activityResumed = false;
+        setTutorialActive(false);
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
-            inlineAuthenticationFailure != null, inlineSubmissionInFlight);
+            inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
         disableNfcReader();
         pauseInlineRewardsScanner();
         super.onPause();
@@ -633,11 +706,13 @@ public class MainActivity extends Activity {
         activityResumed = false;
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
-            inlineAuthenticationFailure != null, inlineSubmissionInFlight);
+            inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
         disableNfcReader();
         if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();
         if (submitTask != null) submitTask.cancel(true);
         submitTask = null;
+        if (tutorialVideo != null) tutorialVideo.release();
+        tutorialVideo = null;
         if (inlineRewardsScanner != null) inlineRewardsScanner.pauseAndWait();
         if (webView != null) webView.destroy();
         super.onDestroy();

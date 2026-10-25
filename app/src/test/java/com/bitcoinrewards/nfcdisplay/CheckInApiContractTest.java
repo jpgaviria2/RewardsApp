@@ -27,7 +27,7 @@ public class CheckInApiContractTest {
         String awaiting="{\"status\":\"AWAITING_CONFIRMATION\",\"storeId\":\"store\",\"deviceId\":\"device\",\"tokenGeneration\":4,\"destination\":\""+lnurl+"\",\"checkInId\":\""+CHECK_IN+"\",\"confirmationId\":\""+CONFIRMATION+"\",\"confirmationVersion\":1,\"protocolVersion\":2,\"amountSatoshis\":321,\"destinationLabel\":\"server metadata\"}";
         CheckInApiContract.ConfirmationResponse confirmation=CheckInApiContract.parseConfirmationResponse(awaiting,polling);
         assertEquals(321,confirmation.amountSatoshis);assertEquals(PendingOperation.Phase.AWAITING_APPROVAL,confirmation.operation.phase);
-        assertEquals("LNURL-pay candidate • pay.example/lnurlp/alice",confirmation.operation.localDestinationLabel);
+        assertEquals("Wallet",confirmation.operation.localDestinationLabel);
     }
 
     @Test public void lowerConfirmationVersionsAreRejectedBeforeStateMutation() {
@@ -42,10 +42,10 @@ public class CheckInApiContractTest {
         PendingOperation prepared=PendingOperation.prepared("store","device","fingerprint",4,scan,UUID.fromString(CHECK_IN),2);
         CheckInApiContract.Request create=CheckInApiContract.checkIn("https://btcpay.example","token",prepared);
         assertEquals("alice@example.com",new org.json.JSONObject(create.body).getString("destination"));
-        assertEquals(raw,prepared.scanText);assertEquals(scan.scanSha256,prepared.scanSha256);assertEquals("Ali…@Example.COM",prepared.localDestinationLabel);
+        assertEquals(raw,prepared.scanText);assertEquals(scan.scanSha256,prepared.scanSha256);assertEquals("Alice",prepared.localDestinationLabel);
         String pending=validCheckIn().replace("Alice@Example.com","alice@example.com");
         PendingOperation polling=CheckInApiContract.parseCheckInResponse(pending).correlate(prepared);
-        assertEquals("alice@example.com",polling.destination);assertEquals(raw,polling.scanText);assertEquals("Ali…@Example.COM",polling.localDestinationLabel);
+        assertEquals("alice@example.com",polling.destination);assertEquals(raw,polling.scanText);assertEquals("Alice",polling.localDestinationLabel);
         PendingOperation restored=PendingOperation.fromJson(polling.toJson().toString());
         assertEquals(polling.destination,restored.destination);assertEquals(polling.scanText,restored.scanText);assertEquals(polling.scanSha256,restored.scanSha256);assertEquals(polling.localDestinationLabel,restored.localDestinationLabel);
     }

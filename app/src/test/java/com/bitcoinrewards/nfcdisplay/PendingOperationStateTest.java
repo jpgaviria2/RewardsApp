@@ -78,7 +78,7 @@ public class PendingOperationStateTest {
         PendingOperation migrated=PendingOperation.fromJson(raw);
         assertEquals("alice@example.com",migrated.destination);
         assertEquals("Alice@Example.COM",migrated.scanText);
-        assertEquals("Ali…@Example.COM",migrated.localDestinationLabel);
+        assertEquals("Alice",migrated.localDestinationLabel);
         PendingOperation restored=PendingOperation.fromJson(migrated.toJson().toString());
         assertEquals(migrated.destination,restored.destination);assertEquals(migrated.scanSha256,restored.scanSha256);
     }
@@ -87,7 +87,7 @@ public class PendingOperationStateTest {
         PendingOperation migrated=PendingOperation.fromJson(legacy("Alice@Example.COM",PendingOperation.Phase.POLLING));
         assertEquals("Alice@Example.COM",migrated.destination);
         assertEquals("Alice@Example.COM",migrated.scanText);
-        assertEquals("Ali…@Example.COM",migrated.localDestinationLabel);
+        assertEquals("Alice",migrated.localDestinationLabel);
     }
 
     @Test public void unsafeLegacySubmittingAndPollingBecomeManualLocks() throws Exception {

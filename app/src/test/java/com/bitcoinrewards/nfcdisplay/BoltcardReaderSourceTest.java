@@ -47,6 +47,7 @@ public class BoltcardReaderSourceTest {
         assertTrue(main.contains("WalletQrPayloadParser.parse(result.getText())"));
         assertFalse(main.contains("WalletQrPayloadParser.parse(boltcardUrl)"));
         assertTrue(main.contains("setInstanceFollowRedirects(false)"));
-        assertTrue(main.contains("setRewardsScannerStatus(boltcardUrl == null ? \"Ready to reward \" + label : \"Ready to reward\")"));
+        assertTrue(main.contains("setRewardsScannerStatus(\"Wallet connected — \" + label)"));
+        assertTrue(main.contains("showSuccessOverlay(label)"));
     }
 }
