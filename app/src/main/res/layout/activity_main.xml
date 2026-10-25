@@ -13,7 +13,7 @@
         <LinearLayout
             android:id="@+id/rewards_scanner_panel"
             android:layout_width="match_parent"
-            android:layout_height="350dp"
+            android:layout_height="410dp"
             android:orientation="vertical"
             android:padding="10dp"
             android:background="@color/rewards_green"
@@ -38,95 +38,49 @@
                 android:textSize="15sp"
                 android:gravity="center" />
 
-            <LinearLayout
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="9dp"
-                android:orientation="horizontal"
-                android:gravity="center">
+                android:padding="4dp"
+                android:background="@drawable/rewards_camera_frame">
 
-                <FrameLayout
-                    android:layout_width="112dp"
-                    android:layout_height="match_parent"
-                    android:padding="5dp"
-                    android:background="@drawable/rewards_phone_frame">
+                <com.journeyapps.barcodescanner.DecoratedBarcodeView
+                    android:id="@+id/inline_rewards_scanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
 
-                    <TextureView
-                        android:id="@+id/wallet_tutorial_video"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:contentDescription="@string/wallet_tutorial_description"
-                        android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:padding="8dp"
+                    android:gravity="center"
+                    android:background="#D9101820"
+                    android:text="@string/camera_guide"
+                    android:textColor="@color/rewards_cream"
+                    android:textStyle="bold"
+                    android:textSize="14sp" />
 
-                    <ImageView
-                        android:id="@+id/wallet_tutorial_poster"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:src="@drawable/wallet_rewards_tutorial_poster"
-                        android:scaleType="centerCrop"
-                        android:importantForAccessibility="no" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="top|center_horizontal"
-                        android:layout_marginTop="4dp"
-                        android:paddingStart="7dp"
-                        android:paddingEnd="7dp"
-                        android:paddingTop="2dp"
-                        android:paddingBottom="2dp"
-                        android:background="#D9101820"
-                        android:text="@string/example_wallet"
-                        android:textColor="@color/rewards_cream"
-                        android:textStyle="bold"
-                        android:textSize="8sp" />
-                </FrameLayout>
-
-                <FrameLayout
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:layout_marginStart="9dp"
-                    android:padding="4dp"
-                    android:background="@drawable/rewards_camera_frame">
-
-                    <com.journeyapps.barcodescanner.DecoratedBarcodeView
-                        android:id="@+id/inline_rewards_scanner"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="bottom"
-                        android:padding="8dp"
-                        android:gravity="center"
-                        android:background="#D9101820"
-                        android:text="@string/camera_guide"
-                        android:textColor="@color/rewards_cream"
-                        android:textStyle="bold"
-                        android:textSize="13sp" />
-
-                    <Button
-                        android:id="@+id/btn_flip_inline_camera"
-                        android:layout_width="48dp"
-                        android:layout_height="42dp"
-                        android:layout_gravity="top|end"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"
-                        android:padding="0dp"
-                        android:backgroundTint="@color/rewards_cream"
-                        android:textColor="@color/rewards_green"
-                        android:text="↻"
-                        android:textSize="22sp"
-                        android:contentDescription="@string/flip_camera" />
-                </FrameLayout>
-            </LinearLayout>
+                <Button
+                    android:id="@+id/btn_flip_inline_camera"
+                    android:layout_width="48dp"
+                    android:layout_height="42dp"
+                    android:layout_gravity="top|end"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:padding="0dp"
+                    android:backgroundTint="@color/rewards_cream"
+                    android:textColor="@color/rewards_green"
+                    android:text="↻"
+                    android:textSize="22sp"
+                    android:contentDescription="@string/flip_camera" />
+            </FrameLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="62dp"
+                android:layout_height="58dp"
                 android:layout_marginTop="9dp"
                 android:orientation="horizontal">
 
@@ -180,7 +134,7 @@
             <TextView
                 android:id="@+id/rewards_scanner_status"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
+                android:layout_height="38dp"
                 android:layout_marginTop="8dp"
                 android:gravity="center"
                 android:paddingStart="12dp"
@@ -194,11 +148,76 @@
                 android:accessibilityLiveRegion="polite" />
         </LinearLayout>
 
-        <WebView
-            android:id="@+id/webview"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_weight="1">
+
+            <WebView
+                android:id="@+id/webview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <LinearLayout
+                android:id="@+id/idle_tutorial_panel"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="10dp"
+                android:background="@color/rewards_green"
+                android:clickable="true"
+                android:focusable="true"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="7dp"
+                    android:text="@string/tutorial_title"
+                    android:textColor="@color/rewards_cream"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+
+                <FrameLayout
+                    android:id="@+id/wallet_tutorial_frame"
+                    android:layout_width="176dp"
+                    android:layout_height="391dp"
+                    android:padding="5dp"
+                    android:background="@drawable/rewards_phone_frame">
+
+                    <TextureView
+                        android:id="@+id/wallet_tutorial_video"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@string/wallet_tutorial_description"
+                        android:importantForAccessibility="no" />
+
+                    <ImageView
+                        android:id="@+id/wallet_tutorial_poster"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:src="@drawable/wallet_rewards_tutorial_poster"
+                        android:scaleType="centerCrop"
+                        android:importantForAccessibility="no" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="top|center_horizontal"
+                        android:layout_marginTop="4dp"
+                        android:paddingStart="7dp"
+                        android:paddingEnd="7dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:background="#D9101820"
+                        android:text="@string/example_wallet"
+                        android:textColor="@color/rewards_cream"
+                        android:textStyle="bold"
+                        android:textSize="10sp" />
+                </FrameLayout>
+            </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
     <TextView
@@ -248,7 +267,7 @@
         android:textColor="@color/rewards_success"
         android:textStyle="bold"
         android:textSize="32sp"
-        android:text="Wallet connected\nYou’re ready to earn rewards"
+        android:text="Wallet connected\nYou’re ready to earn sats"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone" />

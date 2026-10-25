@@ -16,7 +16,11 @@ final class NfcReaderGate {
         this.submissionInFlight = submissionInFlight;
     }
 
-    boolean shouldEnable() {
-        return resumed && eligiblePage && !recovering && !authenticationFailure && !submissionInFlight;
+    boolean shouldIntercept() {
+        return resumed && eligiblePage && !recovering && !authenticationFailure;
+    }
+
+    boolean shouldSubmit() {
+        return shouldIntercept() && !submissionInFlight;
     }
 }

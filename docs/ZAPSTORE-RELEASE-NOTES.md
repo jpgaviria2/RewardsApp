@@ -1,10 +1,8 @@
-# Rewards NFC Display 2.14.1
+# Rewards NFC Display 2.15.0
 
-- Fixes an immediate launch crash caused by assigning a background drawable directly to Android `TextureView`.
-- Keeps the tutorial poster as a separate image behind the video surface, preserving the visual fallback without using an unsupported `TextureView` operation.
-- Rebuilds the customer screen around a clear “Get rewarded in bitcoin” experience.
-- Bundles an offline example-wallet video that shows customers how to open and present their rewards QR.
-- Shows the live camera and Boltcard tap instructions together, with larger visual targets and customer-friendly feedback.
-- Replaces long Lightning addresses and LNURL strings with a short wallet name or a generic wallet/card label.
-- Adds animated connecting and wallet-ready states without claiming a reward was paid before the sale completes.
+- Gives the camera scanner the full screen width and a substantially larger live preview.
+- Moves the example-wallet tutorial into the lower display area and shows it only while waiting for a customer check-in.
+- Automatically replaces the tutorial with the checked-in or reward-ready display as soon as the server reports that state.
+- Uses customer-facing “sats” language instead of “bitcoin” language throughout the native rewards experience.
+- Keeps foreground NFC reader interception active during check-in confirmation so Boltcard taps do not open or prompt for Glow, Fountain, or another wallet app; duplicate submissions remain blocked.
 - Preserves authenticated Boltcard submission, strict QR parsing, TLS validation, QR fallback, and the 30-attempt BTCPay/StartOS restart recovery.

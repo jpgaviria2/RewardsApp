@@ -6,27 +6,29 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class NfcReaderGateTest {
-    @Test public void enablesOnlyForResumedEligibleHealthyIdleDisplay() {
+    @Test public void interceptsOnlyForResumedEligibleHealthyDisplay() {
         NfcReaderGate gate = new NfcReaderGate();
         gate.update(true, true, false, false, false);
-        assertTrue(gate.shouldEnable());
+        assertTrue(gate.shouldIntercept());
+        assertTrue(gate.shouldSubmit());
 
-        gate.update(false, true, false, false, false); assertFalse(gate.shouldEnable());
-        gate.update(true, false, false, false, false); assertFalse(gate.shouldEnable());
-        gate.update(true, true, true, false, false); assertFalse(gate.shouldEnable());
-        gate.update(true, true, false, true, false); assertFalse(gate.shouldEnable());
-        gate.update(true, true, false, false, true); assertFalse(gate.shouldEnable());
+        gate.update(false, true, false, false, false); assertFalse(gate.shouldIntercept());
+        gate.update(true, false, false, false, false); assertFalse(gate.shouldIntercept());
+        gate.update(true, true, true, false, false); assertFalse(gate.shouldIntercept());
+        gate.update(true, true, false, true, false); assertFalse(gate.shouldIntercept());
     }
 
-    @Test public void recoversAfterTransientOrSubmissionGateClears() {
+    @Test public void keepsInterceptingButDoesNotResubmitDuringConfirmation() {
         NfcReaderGate gate = new NfcReaderGate();
         gate.update(true, true, true, false, false);
-        assertFalse(gate.shouldEnable());
+        assertFalse(gate.shouldIntercept());
         gate.update(true, true, false, false, false);
-        assertTrue(gate.shouldEnable());
+        assertTrue(gate.shouldIntercept());
+        assertTrue(gate.shouldSubmit());
         gate.update(true, true, false, false, true);
-        assertFalse(gate.shouldEnable());
+        assertTrue(gate.shouldIntercept());
+        assertFalse(gate.shouldSubmit());
         gate.update(true, true, false, false, false);
-        assertTrue(gate.shouldEnable());
+        assertTrue(gate.shouldSubmit());
     }
 }

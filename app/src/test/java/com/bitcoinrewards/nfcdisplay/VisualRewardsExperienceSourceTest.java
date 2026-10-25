@@ -50,5 +50,28 @@ public class VisualRewardsExperienceSourceTest {
         assertTrue(main.contains("inlineSubmissionInFlight || captureConfirmationVisible"));
     }
 
+    @Test public void scannerIsFullWidthAndTutorialOnlyOccupiesIdleLowerArea() throws Exception {
+        String main=source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
+        String layout=source("src/main/res/layout/activity_main.xml");
+        String strings=source("src/main/res/values/strings.xml").toLowerCase();
+        int scanner=layout.indexOf("android:id=\"@+id/inline_rewards_scanner\"");
+        int tutorialPanel=layout.indexOf("android:id=\"@+id/idle_tutorial_panel\"");
+        int tutorialVideo=layout.indexOf("android:id=\"@+id/wallet_tutorial_video\"");
+        assertTrue(scanner>=0&&tutorialPanel>scanner&&tutorialVideo>tutorialPanel);
+        assertTrue(layout.contains("android:layout_height=\"410dp\""));
+        assertTrue(layout.contains("android:layout_width=\"176dp\""));
+        assertTrue(layout.contains("android:layout_height=\"391dp\""));
+        assertTrue(layout.contains("android:id=\"@+id/wallet_tutorial_frame\""));
+        assertTrue(main.contains("document.querySelector('#rewards-display-state')"));
+        assertTrue(main.contains("state==='checked-in'"));
+        assertTrue(main.contains("idleTutorialEligible = explicitWaiting || (!hasExplicitState && !rewardVisible && !checkedIn)"));
+        assertTrue(main.contains("idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE : View.GONE)"));
+        assertTrue(main.contains("applyResponsiveExperienceLayout"));
+        assertTrue(main.contains("availableHeight * 0.45f"));
+        assertTrue(main.contains("tutorialHeight * 288f / 640f"));
+        assertFalse(strings.contains("bitcoin"));
+        assertTrue(strings.contains("get rewarded in sats"));
+    }
+
     private static int count(String value,String needle){int count=0,offset=0;while((offset=value.indexOf(needle,offset))>=0){count++;offset+=needle.length();}return count;}
 }

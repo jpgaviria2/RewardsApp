@@ -79,12 +79,15 @@ public class MainActivity extends Activity {
     private TextView submissionOverlay;
     private TextView successOverlay;
     private View tapActionCard;
+    private View idleTutorialPanel;
+    private View tutorialFrame;
     private Button flipInlineCameraButton;
     private WalletTutorialVideoController tutorialVideo;
     private List<CameraFacingSelector.CameraDescriptor> availableRewardsCameras = new ArrayList<>();
     private int requestedRewardsCameraFacing = Camera.CameraInfo.CAMERA_FACING_FRONT;
     private CameraFacingSelector.Selection rewardsCameraSelection;
     private boolean scannerPageEligible;
+    private boolean idleTutorialEligible;
     private boolean activityResumed;
     private boolean inlineScannerRunning;
     private boolean inlineSubmissionInFlight;
@@ -147,6 +150,8 @@ public class MainActivity extends Activity {
         submissionOverlay = findViewById(R.id.nfc_tap_overlay);
         successOverlay = findViewById(R.id.nfc_reader_overlay);
         tapActionCard = findViewById(R.id.tap_action_card);
+        idleTutorialPanel = findViewById(R.id.idle_tutorial_panel);
+        tutorialFrame = findViewById(R.id.wallet_tutorial_frame);
         flipInlineCameraButton = findViewById(R.id.btn_flip_inline_camera);
         flipInlineCameraButton.setOnClickListener(v -> flipInlineRewardsCamera());
         inlineRewardsScanner.setStatusText("");
@@ -154,6 +159,8 @@ public class MainActivity extends Activity {
             this,
             (TextureView) findViewById(R.id.wallet_tutorial_video),
             findViewById(R.id.wallet_tutorial_poster));
+        View mainSplitLayout = findViewById(R.id.main_split_layout);
+        mainSplitLayout.post(() -> applyResponsiveExperienceLayout(mainSplitLayout));
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         ImageButton settings = findViewById(R.id.btn_settings);
         settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
@@ -188,6 +195,8 @@ public class MainActivity extends Activity {
                 trustedDisplayRecovery.onPageStarted(url);
                 if (trustedDisplayUrl.equals(url)) displayRecoveryUiState.onTrustedDisplayLoadStarted();
                 scannerPageEligible = false;
+                idleTutorialEligible = false;
+                if (idleTutorialPanel != null) idleTutorialPanel.setVisibility(View.GONE);
                 if (!inlineSubmissionInFlight) hideCaptureOverlays();
                 updateInlineScannerState();
                 super.onPageStarted(view, url, icon);
@@ -262,7 +271,7 @@ public class MainActivity extends Activity {
                     view.setVisibility(View.INVISIBLE);
                     return;
                 }
-                if (scannerPageEligible) updateScannerPanelHeightForPage(view);
+                if (scannerPageEligible) updateExperienceForPage(view);
                 loadingText.setVisibility(View.GONE);
                 view.setVisibility(View.VISIBLE);
             }
@@ -338,7 +347,8 @@ public class MainActivity extends Activity {
             return;
         }
         rewardsScannerPanel.setVisibility(View.VISIBLE);
-        boolean tutorialActive = activityResumed && !inlineSubmissionInFlight && !captureConfirmationVisible
+        boolean tutorialActive = idleTutorialEligible && activityResumed
+            && !inlineSubmissionInFlight && !captureConfirmationVisible
             && inlineAuthenticationFailure == null
             && (trustedDisplayRecovery == null || !trustedDisplayRecovery.isRecovering());
         setTutorialActive(tutorialActive);
@@ -368,21 +378,45 @@ public class MainActivity extends Activity {
             inlineRewardsScanner.resume();
             inlineScannerRunning = true;
         }
-        setRewardsScannerStatus("Ready — tap a card or show a wallet QR");
+        setRewardsScannerStatus("Ready — tap a card or show your sats wallet QR");
         pulseTapCard();
     }
 
-    private void updateScannerPanelHeightForPage(WebView view) {
+    private void updateExperienceForPage(WebView view) {
         view.evaluateJavascript(
-            "(function(){var hasQr=!!document.querySelector('.qr-code img, img[alt*=\\\"Reward QR\\\"], #nfc-lnurl-data[data-lnurl]');return JSON.stringify({hasQr:hasQr});})()",
+            "(function(){var marker=document.querySelector('#rewards-display-state');var state=marker?(marker.getAttribute('data-state')||''):'';var hasQr=state==='reward'||!!document.querySelector('.qr-code img, img[alt*=\\\"Reward QR\\\"], #nfc-lnurl-data[data-lnurl]');var checkedIn=state==='checked-in'||!!document.querySelector('#ready-display');return JSON.stringify({state:state,hasQr:hasQr,checkedIn:checkedIn});})()",
             value -> {
                 if (!scannerPageEligible || rewardsScannerPanel == null) return;
                 boolean rewardVisible = value != null && value.contains("\\\"hasQr\\\":true");
-                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
-                params.weight = 0f;
-                params.height = dp(rewardVisible ? 310 : 350);
-                rewardsScannerPanel.setLayoutParams(params);
+                boolean checkedIn = value != null && value.contains("\\\"checkedIn\\\":true");
+                boolean explicitWaiting = value != null && value.contains("\\\"state\\\":\\\"waiting\\\"");
+                boolean hasExplicitState = value != null && value.contains("\\\"state\\\":\\\"")
+                    && !value.contains("\\\"state\\\":\\\"\\\"");
+                idleTutorialEligible = explicitWaiting || (!hasExplicitState && !rewardVisible && !checkedIn);
+                if (idleTutorialPanel != null) {
+                    idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE : View.GONE);
+                }
+                updateInlineScannerState();
             });
+    }
+
+    private void applyResponsiveExperienceLayout(View root) {
+        if (root == null || rewardsScannerPanel == null || tutorialFrame == null || root.getHeight() <= 0) return;
+        int availableHeight = root.getHeight();
+        int scannerHeight = Math.min(dp(410), Math.max(dp(330), Math.round(availableHeight * 0.45f)));
+        int lowerHeight = Math.max(0, availableHeight - scannerHeight);
+        int tutorialHeight = Math.max(dp(96), Math.min(dp(391), lowerHeight - dp(50)));
+        int tutorialWidth = Math.round(tutorialHeight * 288f / 640f);
+
+        LinearLayout.LayoutParams scannerParams = (LinearLayout.LayoutParams) rewardsScannerPanel.getLayoutParams();
+        scannerParams.weight = 0f;
+        scannerParams.height = scannerHeight;
+        rewardsScannerPanel.setLayoutParams(scannerParams);
+
+        LinearLayout.LayoutParams tutorialParams = (LinearLayout.LayoutParams) tutorialFrame.getLayoutParams();
+        tutorialParams.width = tutorialWidth;
+        tutorialParams.height = tutorialHeight;
+        tutorialFrame.setLayoutParams(tutorialParams);
     }
 
     private void configureInlineRewardsCamera() {
@@ -440,7 +474,10 @@ public class MainActivity extends Activity {
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null,
             inlineSubmissionInFlight || captureConfirmationVisible);
-        boolean shouldEnable = nfcReaderGate.shouldEnable();
+        // Keep foreground reader mode active while submissions are temporarily blocked.
+        // This consumes repeated Boltcard taps inside the kiosk instead of allowing Android
+        // to offer the card's lnurlw:// URI to another installed wallet app.
+        boolean shouldEnable = nfcReaderGate.shouldIntercept();
         try {
             if (shouldEnable && !nfcReaderEnabled) {
                 Bundle options = new Bundle();
@@ -469,12 +506,13 @@ public class MainActivity extends Activity {
     }
 
     private void onNfcTagDiscovered(Tag tag) {
+        if (!nfcReaderGate.shouldSubmit()) return;
         final String boltcardUrl;
         try {
             boltcardUrl = readBoltcardUrl(tag);
         } catch (Exception e) {
             runOnUiThread(() -> {
-                if (nfcReaderGate.shouldEnable()) setRewardsScannerStatus("Tap a standard LNbits Boltcard.");
+                if (nfcReaderGate.shouldSubmit()) setRewardsScannerStatus("Tap a standard LNbits Boltcard.");
             });
             return;
         }
@@ -511,7 +549,7 @@ public class MainActivity extends Activity {
     }
 
     private void submitBoltcardTap(String boltcardUrl) {
-        if (!activityResumed || !nfcReaderGate.shouldEnable() || inlineSubmissionInFlight || !scannerPageEligible) return;
+        if (!activityResumed || !nfcReaderGate.shouldSubmit() || inlineSubmissionInFlight || !scannerPageEligible) return;
         long now = System.currentTimeMillis();
         if (boltcardUrl.equals(lastSubmittedValue) && now - lastSubmittedAtMs < DUPLICATE_SCAN_WINDOW_MS) return;
         inlineSubmissionInFlight = true;
@@ -551,7 +589,7 @@ public class MainActivity extends Activity {
         if (submissionOverlay != null) submissionOverlay.setVisibility(View.GONE);
         if (successOverlay == null) return;
         String customer = label == null || label.isEmpty() ? "Wallet" : label;
-        successOverlay.setText("Wallet connected\n" + customer + "\nYou’re ready to earn rewards");
+        successOverlay.setText("Wallet connected\n" + customer + "\nYou’re ready to earn sats");
         successOverlay.setScaleX(0.88f);
         successOverlay.setScaleY(0.88f);
         successOverlay.setAlpha(0f);
