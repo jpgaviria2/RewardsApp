@@ -26,6 +26,16 @@ public class VisualRewardsExperienceSourceTest {
         assertTrue(controller.contains("openRawResourceFd(R.raw.wallet_rewards_tutorial)"));
         assertFalse(controller.contains("setDataSource(\"http"));
         assertTrue(layout.contains("@drawable/wallet_rewards_tutorial_poster"));
+        int textureStart=layout.indexOf("<TextureView");
+        int textureEnd=layout.indexOf("/>",textureStart);
+        assertTrue(textureStart>=0&&textureEnd>textureStart);
+        assertFalse(layout.substring(textureStart,textureEnd).contains("android:background="));
+        assertTrue(layout.indexOf("@drawable/wallet_rewards_tutorial_poster")>textureEnd);
+        assertTrue(layout.contains("android:id=\"@+id/wallet_tutorial_poster\""));
+        assertTrue(controller.contains("onSurfaceTextureUpdated"));
+        assertTrue(controller.contains("poster.setVisibility(View.GONE)"));
+        assertTrue(controller.contains("poster.setVisibility(View.VISIBLE)"));
+        assertTrue(controller.contains("showPoster();\n        if (player != null)"));
     }
 
     @Test public void captureOverlaysConsumeTouchesAndAuthenticationFailureRevealsGuidance() throws Exception {

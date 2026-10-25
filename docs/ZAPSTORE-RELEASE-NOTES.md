@@ -1,5 +1,7 @@
-# Rewards NFC Display 2.14.0
+# Rewards NFC Display 2.14.1
 
+- Fixes an immediate launch crash caused by assigning a background drawable directly to Android `TextureView`.
+- Keeps the tutorial poster as a separate image behind the video surface, preserving the visual fallback without using an unsupported `TextureView` operation.
 - Rebuilds the customer screen around a clear “Get rewarded in bitcoin” experience.
 - Bundles an offline example-wallet video that shows customers how to open and present their rewards QR.
 - Shows the live camera and Boltcard tap instructions together, with larger visual targets and customer-friendly feedback.

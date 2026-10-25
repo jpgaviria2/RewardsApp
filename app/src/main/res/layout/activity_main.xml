@@ -56,8 +56,15 @@
                         android:id="@+id/wallet_tutorial_video"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:background="@drawable/wallet_rewards_tutorial_poster"
                         android:contentDescription="@string/wallet_tutorial_description"
+                        android:importantForAccessibility="no" />
+
+                    <ImageView
+                        android:id="@+id/wallet_tutorial_poster"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:src="@drawable/wallet_rewards_tutorial_poster"
+                        android:scaleType="centerCrop"
                         android:importantForAccessibility="no" />
 
                     <TextView
