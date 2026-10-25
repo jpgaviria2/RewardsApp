@@ -18,6 +18,8 @@ public class BoltcardReaderSourceTest {
         String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
         assertTrue(main.contains("nfcAdapter.enableReaderMode("));
         assertTrue(main.contains("NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B"));
+        assertTrue(main.contains("nfcReaderGate.shouldIntercept()"));
+        assertTrue(main.contains("if (!nfcReaderGate.shouldSubmit()) return;"));
         assertTrue(main.contains("trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering()"));
         assertTrue(main.contains("nfcReaderGate.update("));
         assertTrue(main.contains("activityResumed = false;\n        nfcReaderGate.update(false, scannerPageEligible,"));
