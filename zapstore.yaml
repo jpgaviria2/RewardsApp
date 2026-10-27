@@ -1,5 +1,5 @@
 repository: https://github.com/jpgaviria2/RewardsApp
-release_source: https://github.com/jpgaviria2/RewardsApp/releases/download/v2.15.0/rewards-nfc-display-2.15.0-production.apk
+release_source: https://github.com/jpgaviria2/RewardsApp/releases/download/v2.16.0/rewards-nfc-display-2.16.0-production.apk
 match: "rewards-nfc-display-.*\\.apk$"
 pubkey: npub13xxh7qmxlean3xspxyjryl3y8ppsl300f998mq2qvc7vmzwatvfqt9s4p0
 name: Rewards NFC Display
@@ -12,11 +12,11 @@ description: |
   - Display BTCPay-hosted rewards pages
   - Scan customer Lightning-address and standards-compliant LNURL-pay QR codes natively
   - Save the scan for the next Square order reward
-  - Pair with BTCPay using login QR/code flow
+  - Pair with BTCPay by scanning a Store QR followed by the login QR, with manual setup as fallback
   - Support NFC display/tap workflows when NFC hardware is available
   - Avoid browser camera permission issues
 
-  Configure your own BTCPay Server URL and store ID after installation.
+  Configure with the QR-only onboarding flow or enter your BTCPay Server URL and Store ID manually.
 tags:
   - bitcoin
   - lightning
