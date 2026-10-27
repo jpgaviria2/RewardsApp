@@ -50,8 +50,13 @@ public class SettingsActivity extends Activity {
         pendingStoreId = state == null ? null : state.getString(STATE_PENDING_STORE_ID);
         preStoreQrOrigin = state == null ? null : state.getString(STATE_PRE_STORE_QR_ORIGIN);
         preStoreQrStoreId = state == null ? null : state.getString(STATE_PRE_STORE_QR_STORE_ID);
-        url.setText(p.getString(KEY_BTCPAY_URL, ""));
-        store.setText(p.getString(KEY_STORE_ID, ""));
+        if (storeQrSetupPending && pendingStoreOrigin != null && pendingStoreId != null) {
+            url.setText(pendingStoreOrigin);
+            store.setText(pendingStoreId);
+        } else {
+            url.setText(p.getString(KEY_BTCPAY_URL, ""));
+            store.setText(p.getString(KEY_STORE_ID, ""));
+        }
         device.setText(p.getString(KEY_CHECK_IN_DEVICE_ID, ""));
 
         Button scanStore = findViewById(R.id.btn_scan_store_qr);
@@ -90,7 +95,7 @@ public class SettingsActivity extends Activity {
             } catch (Exception e) {
                 storeQrSetupPending = false;
                 clearPreStoreQrFields();
-                showStatus("Store QR rejected. Scan the canonical HTTPS Bitcoin Rewards display URL.");
+                showStatus("Store QR rejected. Scan the BTCPay Store ID QR or canonical HTTPS Bitcoin Rewards display URL.");
             }
             return;
         }
@@ -99,6 +104,7 @@ public class SettingsActivity extends Activity {
             OneTimeLoginHandoff.clear();
             if (storeQrSetupPending) {
                 restorePreStoreQrFields();
+                clearPendingStoreConfirmation();
                 showStatus("BTCPay login QR scan cancelled. The scanned Store QR was not saved.");
                 storeQrSetupPending = false;
             }
@@ -107,11 +113,15 @@ public class SettingsActivity extends Activity {
         String raw = OneTimeLoginHandoff.consume();
         boolean fromStoreQr = storeQrSetupPending;
         try {
-            String configured = url.getText().toString().trim();
+            String configured = fromStoreQr && pendingStoreOrigin != null
+                ? pendingStoreOrigin
+                : url.getText().toString().trim();
             LoginCodePayloadParser.ParsedPayload parsed = LoginCodePayloadParser.parse(raw, configured);
             raw = null;
             url.setText(parsed.origin);
-            String storeId = store.getText().toString().trim();
+            String storeId = fromStoreQr && pendingStoreId != null
+                ? pendingStoreId
+                : store.getText().toString().trim();
             String origin = fromStoreQr
                 ? ApiOrigin.requireConfigured(parsed.origin).toString()
                 : persistDisplayConfiguration(parsed.origin, storeId);
@@ -120,13 +130,18 @@ public class SettingsActivity extends Activity {
             String loginUrl = LoginCodePayloadParser.buildTrustedLoginUrl(parsed, displayUrl);
             if (fromStoreQr) OneTimeDisplayLoginHandoff.publishWithPendingConfiguration(loginUrl, origin, storeId);
             else OneTimeDisplayLoginHandoff.publish(loginUrl);
+            clearPendingStoreConfirmation();
+            clearPreStoreQrFields();
             Intent main = new Intent(this, MainActivity.class);
             // MainActivity uses the standard launch mode, so CLEAR_TOP replaces any stale expired instance.
             main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(main);
             finish();
         } catch (Exception e) {
-            if (fromStoreQr) restorePreStoreQrFields();
+            if (fromStoreQr) {
+                restorePreStoreQrFields();
+                clearPendingStoreConfirmation();
+            }
             showStatus(fromStoreQr
                 ? "Login QR rejected. The scanned Store QR was not saved; scan a fresh BTCPay login QR and try again."
                 : "Login QR rejected. Use a fresh HTTPS BTCPay login QR for the configured server and Store ID.");
@@ -162,14 +177,20 @@ public class SettingsActivity extends Activity {
         confirmingStoreQr = true;
         pendingStoreOrigin = parsed.origin;
         pendingStoreId = parsed.storeId;
+        boolean hasOrigin = !parsed.origin.isEmpty();
+        String confirmation = hasOrigin
+            ? "BTCPay server: " + parsed.origin + "\nStore ID: " + parsed.storeId
+            : "Store ID: " + parsed.storeId + "\nThe BTCPay server will be read from the login QR.";
         new AlertDialog.Builder(this)
             .setTitle("Confirm Store QR")
-            .setMessage("BTCPay server: " + parsed.origin + "\nStore ID: " + parsed.storeId)
+            .setMessage(confirmation)
             .setPositiveButton("Scan login QR", (dialog, which) -> {
-                clearPendingStoreConfirmation();
-                url.setText(parsed.origin);
+                confirmingStoreQr = false;
+                url.setText(hasOrigin ? parsed.origin : "");
                 store.setText(parsed.storeId);
-                showStatus("Store QR confirmed. Scan a fresh BTCPay login QR to finish setup.");
+                showStatus(hasOrigin
+                    ? "Store QR confirmed. Scan a fresh BTCPay login QR to finish setup."
+                    : "Store ID confirmed. Scan a fresh BTCPay login QR to detect the server and finish setup.");
                 startLoginScan(true);
             })
             .setNegativeButton("Cancel", (dialog, which) -> {

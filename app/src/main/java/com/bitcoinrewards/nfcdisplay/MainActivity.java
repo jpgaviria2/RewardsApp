@@ -71,6 +71,8 @@ public class MainActivity extends Activity {
     private RewardsPagePolicy rewardsPagePolicy;
     private final MainFrameLoadGate mainFrameLoadGate = new MainFrameLoadGate();
     private String trustedDisplayUrl;
+    private String trustedOrigin;
+    private String trustedCheckInApiUrl;
     private boolean loginExchange;
     private boolean pendingDisplayConfigurationCommit;
     private String pendingDisplayOrigin, pendingDisplayStore;
@@ -92,6 +94,7 @@ public class MainActivity extends Activity {
     private int requestedRewardsCameraFacing = Camera.CameraInfo.CAMERA_FACING_FRONT;
     private CameraFacingSelector.Selection rewardsCameraSelection;
     private boolean scannerPageEligible;
+    private boolean checkInCapabilityVerified;
     private boolean idleTutorialEligible;
     private boolean activityResumed;
     private boolean inlineScannerRunning;
@@ -101,6 +104,7 @@ public class MainActivity extends Activity {
     private String lastSubmittedValue;
     private long lastSubmittedAtMs;
     private SubmitInlineCheckInTask submitTask;
+    private VerifyCheckInCapabilityTask capabilityTask;
     private NfcAdapter nfcAdapter;
     private boolean nfcReaderEnabled;
     private final NfcReaderGate nfcReaderGate = new NfcReaderGate();
@@ -153,6 +157,8 @@ public class MainActivity extends Activity {
         try {
             policy = new WebOriginPolicy(configuredOrigin);
             rewardsPagePolicy = new RewardsPagePolicy(configuredOrigin, configuredStore);
+            trustedOrigin = ApiOrigin.requireConfigured(configuredOrigin).toString();
+            trustedCheckInApiUrl = SettingsActivity.buildLegacyCheckInUrl(configuredOrigin, configuredStore);
         } catch (Exception e) {
             openSettingsAndFinish();
             return;
@@ -228,6 +234,8 @@ public class MainActivity extends Activity {
         });
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, Bitmap icon) {
+                cancelCapabilityProbe();
+                checkInCapabilityVerified = false;
                 mainFrameLoadGate.onPageStarted(url);
                 trustedDisplayRecovery.onPageStarted(url);
                 if (trustedDisplayUrl.equals(url)) displayRecoveryUiState.onTrustedDisplayLoadStarted();
@@ -291,29 +299,14 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 boolean successfulMainFrame = mainFrameLoadGate.isSuccessfulCompletion(url);
                 if (successfulMainFrame && trustedDisplayUrl.equals(url)) {
-                    if (pendingDisplayConfigurationCommit) {
-                        try {
-                            SettingsActivity.commitDisplayConfiguration(
-                                MainActivity.this, pendingDisplayOrigin, pendingDisplayStore);
-                            pendingDisplayConfigurationCommit = false;
-                            pendingDisplayOrigin = null;
-                            pendingDisplayStore = null;
-                        } catch (Exception e) {
-                            loadingText.setText("Display login succeeded, but the Store configuration could not be saved. Open Settings and try again.");
-                            loadingText.setVisibility(View.VISIBLE);
-                            view.setVisibility(View.INVISIBLE);
-                            return;
-                        }
-                    }
-                    trustedDisplayRecovery.onSuccessfulCompletion(url);
-                    displayRecoveryUiState.onSuccessfulTrustedDisplay();
+                    scrubCompletedLoginExchange(view);
+                    checkInCapabilityVerified = false;
+                    scannerPageEligible = false;
+                    updateInlineScannerState();
+                    beginCheckInCapabilityProbe(view, url);
+                    return;
                 }
-                if (loginExchange && successfulMainFrame && trustedDisplayUrl.equals(url)) {
-                    view.clearHistory();
-                    view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
-                    loginExchange = false;
-                }
-                scannerPageEligible = successfulMainFrame
+                scannerPageEligible = checkInCapabilityVerified && successfulMainFrame
                     && rewardsPagePolicy.isEligiblePageCompletion(url, view.getUrl());
                 updateInlineScannerState();
                 if (!successfulMainFrame && displayRecoveryUiState.shouldHoldFailureUi()) {
@@ -330,6 +323,66 @@ public class MainActivity extends Activity {
         webView.setVisibility(View.INVISIBLE);
         loadingText.setVisibility(View.VISIBLE);
         webView.loadUrl(initialUrl);
+    }
+
+    private void beginCheckInCapabilityProbe(WebView view, String completedUrl) {
+        if (capabilityTask != null) return;
+        loadingText.setText("Verifying BTCPay rewards check-in access…");
+        loadingText.setVisibility(View.VISIBLE);
+        view.setVisibility(View.INVISIBLE);
+        capabilityTask = new VerifyCheckInCapabilityTask(completedUrl);
+        capabilityTask.execute();
+    }
+
+    private void cancelCapabilityProbe() {
+        if (capabilityTask != null) capabilityTask.cancel(true);
+        capabilityTask = null;
+    }
+
+    private void scrubCompletedLoginExchange(WebView view) {
+        if (!loginExchange || view == null) return;
+        view.clearHistory();
+        view.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+        loginExchange = false;
+    }
+
+    private void finishAuthorizedDisplay(WebView view, String completedUrl) {
+        if (view == null || !trustedDisplayUrl.equals(completedUrl)
+            || !trustedDisplayUrl.equals(view.getUrl())) return;
+        if (pendingDisplayConfigurationCommit) {
+            try {
+                SettingsActivity.commitDisplayConfiguration(
+                    MainActivity.this, pendingDisplayOrigin, pendingDisplayStore);
+                pendingDisplayConfigurationCommit = false;
+                pendingDisplayOrigin = null;
+                pendingDisplayStore = null;
+            } catch (Exception e) {
+                loadingText.setText("BTCPay check-in access was verified, but the Store configuration could not be saved. Open Settings and try again.");
+                loadingText.setVisibility(View.VISIBLE);
+                view.setVisibility(View.INVISIBLE);
+                return;
+            }
+        }
+        inlineAuthenticationFailure = null;
+        trustedDisplayRecovery.onSuccessfulCompletion(completedUrl);
+        displayRecoveryUiState.onSuccessfulTrustedDisplay();
+        checkInCapabilityVerified = true;
+        scannerPageEligible = checkInCapabilityVerified
+            && rewardsPagePolicy.isEligiblePageCompletion(completedUrl, view.getUrl());
+        updateInlineScannerState();
+        if (scannerPageEligible) updateExperienceForPage(view);
+        loadingText.setVisibility(View.GONE);
+        view.setVisibility(View.VISIBLE);
+    }
+
+    private void failCheckInCapabilityProbe(WebView view, int responseCode) {
+        checkInCapabilityVerified = false;
+        scannerPageEligible = false;
+        inlineAuthenticationFailure = CheckInCapabilityAuthorization.failureMessage(responseCode);
+        updateInlineScannerState();
+        loadingText.setText(inlineAuthenticationFailure);
+        loadingText.setVisibility(View.VISIBLE);
+        if (view != null) view.setVisibility(View.INVISIBLE);
     }
 
     private void openSettingsAndFinish() {
@@ -681,6 +734,57 @@ public class MainActivity extends Activity {
     }
 
     @SuppressLint("StaticFieldLeak")
+    private final class VerifyCheckInCapabilityTask extends AsyncTask<Void, Void, Boolean> {
+        private final String completedUrl;
+        private int responseCode;
+
+        VerifyCheckInCapabilityTask(String completedUrl) {
+            this.completedUrl = completedUrl;
+        }
+
+        @Override protected Boolean doInBackground(Void... ignored) {
+            HttpURLConnection connection = null;
+            try {
+                String cookie = InlineCheckInAuthentication.cookieForTrustedApi(
+                    trustedOrigin,
+                    trustedCheckInApiUrl,
+                    url -> CookieManager.getInstance().getCookie(url));
+                if (cookie == null || isCancelled()) return false;
+                JSONObject body = new JSONObject().put("lightningAddress", "");
+                connection = (HttpURLConnection) new URL(trustedCheckInApiUrl).openConnection();
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Cookie", cookie);
+                connection.setConnectTimeout(10_000);
+                connection.setReadTimeout(15_000);
+                connection.setDoOutput(true);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                responseCode = connection.getResponseCode();
+                return CheckInCapabilityAuthorization.isAuthorizedProbeResponse(responseCode);
+            } catch (Exception e) {
+                return false;
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+
+        @Override protected void onPostExecute(Boolean authorized) {
+            if (capabilityTask != this) return;
+            capabilityTask = null;
+            if (authorized) finishAuthorizedDisplay(webView, completedUrl);
+            else failCheckInCapabilityProbe(webView, responseCode);
+        }
+
+        @Override protected void onCancelled() {
+            if (capabilityTask == this) capabilityTask = null;
+        }
+    }
+
+    @SuppressLint("StaticFieldLeak")
     private final class SubmitInlineCheckInTask extends AsyncTask<Void, Void, Boolean> {
         private final WalletQrPayloadParser.ParsedPayload payload;
         private final String boltcardUrl;
@@ -805,6 +909,7 @@ public class MainActivity extends Activity {
             inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
         disableNfcReader();
         if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();
+        cancelCapabilityProbe();
         if (submitTask != null) submitTask.cancel(true);
         submitTask = null;
         if (tutorialVideo != null) tutorialVideo.release();

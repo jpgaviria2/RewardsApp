@@ -65,7 +65,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="For QR-only setup, scan the canonical Bitcoin Rewards display Store QR first and then a fresh BTCPay login QR. The short-lived login code is used once and never saved. Manual server and Store ID entry remains available."
+            android:text="For QR-only setup, scan either the BTCPay Store ID QR or the canonical Bitcoin Rewards display QR, then scan a fresh BTCPay login QR. The short-lived login code is used once and never saved. Manual server and Store ID entry remains available."
             android:textColor="#aaaacc"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="12dp" />

@@ -6,6 +6,13 @@ import static org.junit.Assert.*;
 
 public class StoreQrPayloadParserTest {
     private static final String ORIGIN = "https://btcpay.example";
+    private static final String RAW_STORE_ID = "7YxK9mP3qR8sT2vW4zA6bC1dE5fG7hJ9kL3nP";
+
+    @Test public void parsesRawBtcpayStoreIdQr() {
+        StoreQrPayloadParser.ParsedPayload parsed = StoreQrPayloadParser.parse(RAW_STORE_ID);
+        assertEquals("", parsed.origin);
+        assertEquals(RAW_STORE_ID, parsed.storeId);
+    }
 
     @Test public void parsesCanonicalRewardsDisplayUrl() {
         StoreQrPayloadParser.ParsedPayload parsed = StoreQrPayloadParser.parse(
@@ -48,6 +55,13 @@ public class StoreQrPayloadParserTest {
         assertRejected(null);
         assertRejected("   ");
         assertRejected(ORIGIN + "/plugins/bitcoin-rewards/" + repeat('a', 300) + "/display");
+        assertRejected(repeat('a', 300));
+    }
+
+    @Test public void rejectsShortOrNonAlphanumericRawStoreIds() {
+        assertRejected("short");
+        assertRejected("7YxK9mP3qR8sT2vW4zA6bC1dE5fG7hJ9kL3-nP");
+        assertRejected("7YxK9mP3qR8sT2vW4zA6bC1dE5fG7hJ9kL3/nP");
     }
 
     private static void assertRejected(String payload) {

@@ -8,7 +8,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
-/** Parses the exact Bitcoin Rewards display URL used as the non-secret Store QR. */
+/** Parses BTCPay's raw Store ID QR or an exact Bitcoin Rewards display URL. */
 final class StoreQrPayloadParser {
     private static final int MAX_PAYLOAD = 8192;
     private static final String PREFIX = "/plugins/bitcoin-rewards/";
@@ -28,6 +28,7 @@ final class StoreQrPayloadParser {
         if (payload == null) throw invalid();
         String value = payload.trim();
         if (value.isEmpty() || value.length() > MAX_PAYLOAD) throw invalid();
+        if (!looksLikeUrl(value)) return parseRawStoreId(value);
         try {
             URI uri = new URI(value);
             int port = uri.getPort() == -1 ? 443 : uri.getPort();
@@ -52,6 +53,22 @@ final class StoreQrPayloadParser {
         } catch (Exception e) {
             throw invalid();
         }
+    }
+
+    private static ParsedPayload parseRawStoreId(String value) {
+        PendingOperation.validateText(value, 256);
+        if (value.length() < 16 || value.length() > 128) throw invalid();
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (!((current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z') ||
+                (current >= '0' && current <= '9'))) throw invalid();
+        }
+        return new ParsedPayload("", value);
+    }
+
+    private static boolean looksLikeUrl(String value) {
+        return value.regionMatches(true, 0, "https://", 0, 8) ||
+            value.regionMatches(true, 0, "http://", 0, 7);
     }
 
     private static String decodeCanonicalSegment(String value) {
