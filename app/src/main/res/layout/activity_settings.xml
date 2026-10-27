@@ -47,17 +47,25 @@
             android:textColorHint="#8888aa" />
 
         <Button
+            android:id="@+id/btn_scan_store_qr"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scan Store QR, then login QR"
+            android:textAllCaps="false"
+            android:layout_marginTop="12dp" />
+
+        <Button
             android:id="@+id/btn_scan_login_code"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Scan BTCPay login QR"
             android:textAllCaps="false"
-            android:layout_marginTop="12dp" />
+            android:layout_marginTop="8dp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="The short-lived login code is used once in the display WebView and is never saved. QR return targets are ignored; the destination is built from the HTTPS server and Store ID above."
+            android:text="For QR-only setup, scan the canonical Bitcoin Rewards display Store QR first and then a fresh BTCPay login QR. The short-lived login code is used once and never saved. Manual server and Store ID entry remains available."
             android:textColor="#aaaacc"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="12dp" />

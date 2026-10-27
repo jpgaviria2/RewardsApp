@@ -23,10 +23,12 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView;
  */
 public class LoginCodeScanActivity extends Activity {
     private static final int CAMERA_PERMISSION_REQUEST = 4301;
+    static final String EXTRA_STORE_QR_MODE = "store_qr_mode";
 
     private DecoratedBarcodeView barcodeView;
     private TextView statusText;
     private boolean handled = false;
+    private boolean storeQrMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,9 +37,12 @@ public class LoginCodeScanActivity extends Activity {
 
         barcodeView = findViewById(R.id.login_barcode_scanner);
         statusText = findViewById(R.id.login_scan_status);
+        storeQrMode = getIntent().getBooleanExtra(EXTRA_STORE_QR_MODE, false);
         Button close = findViewById(R.id.btn_close_login_scan);
         if (close != null) {
             close.setOnClickListener(v -> {
+                if (storeQrMode) OneTimeStoreHandoff.clear();
+                else OneTimeLoginHandoff.clear();
                 setResult(RESULT_CANCELED);
                 finish();
             });
@@ -56,14 +61,18 @@ public class LoginCodeScanActivity extends Activity {
         if (requestCode == CAMERA_PERMISSION_REQUEST && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startScanning();
         } else {
-            setStatus("Camera permission is required to scan the BTCPay login QR.");
+            setStatus(storeQrMode
+                ? "Camera permission is required to scan the Store QR."
+                : "Camera permission is required to scan the BTCPay login QR.");
             Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show();
         }
     }
 
     private void startScanning() {
         handled = false;
-        setStatus("Point camera at the BTCPay login QR.");
+        setStatus(storeQrMode
+            ? "Point camera at the Bitcoin Rewards display Store QR."
+            : "Point camera at the BTCPay login QR.");
         barcodeView.decodeContinuous(callback);
         barcodeView.resume();
     }
@@ -74,10 +83,19 @@ public class LoginCodeScanActivity extends Activity {
             if (handled || result == null || result.getText() == null) return;
             String payload = result.getText().trim();
             if (payload.isEmpty()) return;
+            if (storeQrMode) {
+                try {
+                    StoreQrPayloadParser.parse(payload);
+                } catch (IllegalArgumentException e) {
+                    setStatus("Not a valid Store QR. Scan the canonical Bitcoin Rewards display URL.");
+                    return;
+                }
+            }
             handled = true;
             barcodeView.pause();
             vibrate();
-            OneTimeLoginHandoff.publish(payload);
+            if (storeQrMode) OneTimeStoreHandoff.publish(payload);
+            else OneTimeLoginHandoff.publish(payload);
             setResult(RESULT_OK);
             finish();
         }

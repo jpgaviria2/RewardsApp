@@ -61,6 +61,9 @@ public class MainActivity extends Activity {
     private static final int DISPLAY_RETRY_ATTEMPTS = 30;
     private static final long DISPLAY_RETRY_INITIAL_MS = 1_500L;
     private static final long DISPLAY_RETRY_MAX_MS = 30_000L;
+    private static final String STATE_PENDING_DISPLAY_COMMIT = "pending_display_commit";
+    private static final String STATE_PENDING_DISPLAY_ORIGIN = "pending_display_origin";
+    private static final String STATE_PENDING_DISPLAY_STORE = "pending_display_store";
 
     private WebView webView;
     private TextView loadingText;
@@ -69,6 +72,8 @@ public class MainActivity extends Activity {
     private final MainFrameLoadGate mainFrameLoadGate = new MainFrameLoadGate();
     private String trustedDisplayUrl;
     private boolean loginExchange;
+    private boolean pendingDisplayConfigurationCommit;
+    private String pendingDisplayOrigin, pendingDisplayStore;
     private Handler recoveryHandler;
     private TrustedDisplayRecovery trustedDisplayRecovery;
     private final DisplayRecoveryUiState displayRecoveryUiState = new DisplayRecoveryUiState();
@@ -105,24 +110,56 @@ public class MainActivity extends Activity {
         LegacyCredentialPurge.run(this, () -> initialize(state));
     }
 
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean(STATE_PENDING_DISPLAY_COMMIT, pendingDisplayConfigurationCommit);
+        state.putString(STATE_PENDING_DISPLAY_ORIGIN, pendingDisplayOrigin);
+        state.putString(STATE_PENDING_DISPLAY_STORE, pendingDisplayStore);
+        super.onSaveInstanceState(state);
+    }
+
     private void initialize(Bundle state) {
-        if (!SettingsActivity.displayConfigurationUsable(this)) {
-            startActivity(new Intent(this, SettingsActivity.class));
-            finish();
-            return;
+        OneTimeDisplayLoginHandoff.Request loginRequest = OneTimeDisplayLoginHandoff.consume();
+        pendingDisplayConfigurationCommit = state != null && state.getBoolean(STATE_PENDING_DISPLAY_COMMIT, false);
+        pendingDisplayOrigin = state == null ? null : state.getString(STATE_PENDING_DISPLAY_ORIGIN);
+        pendingDisplayStore = state == null ? null : state.getString(STATE_PENDING_DISPLAY_STORE);
+        if (loginRequest != null && loginRequest.hasPendingConfiguration()) {
+            pendingDisplayConfigurationCommit = true;
+            pendingDisplayOrigin = loginRequest.pendingOrigin;
+            pendingDisplayStore = loginRequest.pendingStoreId;
         }
-        String display = SettingsActivity.getDisplayUrl(this);
+
+        String configuredOrigin;
+        String configuredStore;
+        String display;
+        if (pendingDisplayConfigurationCommit) {
+            try {
+                configuredOrigin = ApiOrigin.requireConfigured(pendingDisplayOrigin).toString();
+                PendingOperation.validateText(pendingDisplayStore, 256);
+                configuredStore = pendingDisplayStore;
+                display = configuredOrigin + "/plugins/bitcoin-rewards/" + PathSegmentCodec.encode(configuredStore) + "/display";
+            } catch (Exception e) {
+                openSettingsAndFinish();
+                return;
+            }
+        } else {
+            if (!SettingsActivity.displayConfigurationUsable(this)) {
+                openSettingsAndFinish();
+                return;
+            }
+            configuredOrigin = SettingsActivity.getBtcpayUrl(this);
+            configuredStore = SettingsActivity.getStoreId(this);
+            display = SettingsActivity.getDisplayUrl(this);
+        }
         try {
-            policy = new WebOriginPolicy(SettingsActivity.getBtcpayUrl(this));
-            rewardsPagePolicy = new RewardsPagePolicy(SettingsActivity.getBtcpayUrl(this), SettingsActivity.getStoreId(this));
+            policy = new WebOriginPolicy(configuredOrigin);
+            rewardsPagePolicy = new RewardsPagePolicy(configuredOrigin, configuredStore);
         } catch (Exception e) {
-            startActivity(new Intent(this, SettingsActivity.class));
-            finish();
+            openSettingsAndFinish();
             return;
         }
 
-        String requestedLogin = OneTimeLoginHandoff.consume();
-        loginExchange = LoginCodePayloadParser.isTrustedLoginUrl(requestedLogin, SettingsActivity.getBtcpayUrl(this), display);
+        String requestedLogin = loginRequest == null ? null : loginRequest.loginUrl;
+        loginExchange = LoginCodePayloadParser.isTrustedLoginUrl(requestedLogin, configuredOrigin, display);
         final String initialUrl = loginExchange ? requestedLogin : display;
         requestedLogin = null;
         trustedDisplayUrl = display;
@@ -254,6 +291,20 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 boolean successfulMainFrame = mainFrameLoadGate.isSuccessfulCompletion(url);
                 if (successfulMainFrame && trustedDisplayUrl.equals(url)) {
+                    if (pendingDisplayConfigurationCommit) {
+                        try {
+                            SettingsActivity.commitDisplayConfiguration(
+                                MainActivity.this, pendingDisplayOrigin, pendingDisplayStore);
+                            pendingDisplayConfigurationCommit = false;
+                            pendingDisplayOrigin = null;
+                            pendingDisplayStore = null;
+                        } catch (Exception e) {
+                            loadingText.setText("Display login succeeded, but the Store configuration could not be saved. Open Settings and try again.");
+                            loadingText.setVisibility(View.VISIBLE);
+                            view.setVisibility(View.INVISIBLE);
+                            return;
+                        }
+                    }
                     trustedDisplayRecovery.onSuccessfulCompletion(url);
                     displayRecoveryUiState.onSuccessfulTrustedDisplay();
                 }
@@ -279,6 +330,11 @@ public class MainActivity extends Activity {
         webView.setVisibility(View.INVISIBLE);
         loadingText.setVisibility(View.VISIBLE);
         webView.loadUrl(initialUrl);
+    }
+
+    private void openSettingsAndFinish() {
+        startActivity(new Intent(this, SettingsActivity.class));
+        finish();
     }
 
     private void failMainFrameLoad(String failingUrl, boolean recoverableNetworkOrTlsFailure) {

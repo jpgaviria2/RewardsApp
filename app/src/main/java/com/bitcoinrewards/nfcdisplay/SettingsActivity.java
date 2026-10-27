@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,7 +12,14 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 public class SettingsActivity extends Activity {
+    private static final int STORE_QR_SCAN_REQUEST = 4400;
     private static final int LOGIN_CODE_SCAN_REQUEST = 4401;
+    private static final String STATE_STORE_QR_SETUP_PENDING = "store_qr_setup_pending";
+    private static final String STATE_CONFIRMING_STORE_QR = "confirming_store_qr";
+    private static final String STATE_PENDING_STORE_ORIGIN = "pending_store_origin";
+    private static final String STATE_PENDING_STORE_ID = "pending_store_id";
+    private static final String STATE_PRE_STORE_QR_ORIGIN = "pre_store_qr_origin";
+    private static final String STATE_PRE_STORE_QR_STORE_ID = "pre_store_qr_store_id";
     static final String PREFS_NAME = "rewards_nfc_prefs";
     static final String KEY_BTCPAY_URL = "btcpay_url", KEY_STORE_ID = "store_id", KEY_CHECK_IN_DEVICE_ID = "check_in_device_id";
     static final String KEY_TOKEN_FINGERPRINT = "scanner_token_fingerprint", KEY_TOKEN_GENERATION = "scanner_token_generation", KEY_ONBOARDED = "onboarded";
@@ -19,6 +27,9 @@ public class SettingsActivity extends Activity {
 
     private EditText url, store, device, token;
     private TextView status;
+    private boolean storeQrSetupPending;
+    private boolean confirmingStoreQr;
+    private String pendingStoreOrigin, pendingStoreId, preStoreQrOrigin, preStoreQrStoreId;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -33,12 +44,20 @@ public class SettingsActivity extends Activity {
         device = findViewById(R.id.input_check_in_device_id);
         token = findViewById(R.id.input_check_in_token);
         status = findViewById(R.id.status_text);
+        storeQrSetupPending = state != null && state.getBoolean(STATE_STORE_QR_SETUP_PENDING, false);
+        confirmingStoreQr = state != null && state.getBoolean(STATE_CONFIRMING_STORE_QR, false);
+        pendingStoreOrigin = state == null ? null : state.getString(STATE_PENDING_STORE_ORIGIN);
+        pendingStoreId = state == null ? null : state.getString(STATE_PENDING_STORE_ID);
+        preStoreQrOrigin = state == null ? null : state.getString(STATE_PRE_STORE_QR_ORIGIN);
+        preStoreQrStoreId = state == null ? null : state.getString(STATE_PRE_STORE_QR_STORE_ID);
         url.setText(p.getString(KEY_BTCPAY_URL, ""));
         store.setText(p.getString(KEY_STORE_ID, ""));
         device.setText(p.getString(KEY_CHECK_IN_DEVICE_ID, ""));
 
+        Button scanStore = findViewById(R.id.btn_scan_store_qr);
+        scanStore.setOnClickListener(v -> startStoreQrSetup());
         Button scanLogin = findViewById(R.id.btn_scan_login_code);
-        scanLogin.setOnClickListener(v -> startActivityForResult(new Intent(this, LoginCodeScanActivity.class), LOGIN_CODE_SCAN_REQUEST));
+        scanLogin.setOnClickListener(v -> startLoginScan(false));
         Button saveDisplay = findViewById(R.id.btn_save);
         saveDisplay.setOnClickListener(v -> saveDisplayAndLaunch());
         Button saveScanner = findViewById(R.id.btn_save_scanner);
@@ -49,35 +68,158 @@ public class SettingsActivity extends Activity {
             status.setVisibility(View.VISIBLE);
             getIntent().removeExtra("show_scanner_provisioning");
         }
+        if (confirmingStoreQr && pendingStoreOrigin != null && pendingStoreId != null) {
+            confirmStoreQr(new StoreQrPayloadParser.ParsedPayload(pendingStoreOrigin, pendingStoreId));
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != LOGIN_CODE_SCAN_REQUEST || resultCode != RESULT_OK) return;
+        if (requestCode == STORE_QR_SCAN_REQUEST) {
+            if (resultCode != RESULT_OK) {
+                OneTimeStoreHandoff.clear();
+                clearPreStoreQrFields();
+                showStatus("Store QR scan cancelled. Existing configuration was not changed.");
+                return;
+            }
+            String rawStore = OneTimeStoreHandoff.consume();
+            try {
+                StoreQrPayloadParser.ParsedPayload parsed = StoreQrPayloadParser.parse(rawStore);
+                rawStore = null;
+                confirmStoreQr(parsed);
+            } catch (Exception e) {
+                storeQrSetupPending = false;
+                clearPreStoreQrFields();
+                showStatus("Store QR rejected. Scan the canonical HTTPS Bitcoin Rewards display URL.");
+            }
+            return;
+        }
+        if (requestCode != LOGIN_CODE_SCAN_REQUEST) return;
+        if (resultCode != RESULT_OK) {
+            OneTimeLoginHandoff.clear();
+            if (storeQrSetupPending) {
+                restorePreStoreQrFields();
+                showStatus("BTCPay login QR scan cancelled. The scanned Store QR was not saved.");
+                storeQrSetupPending = false;
+            }
+            return;
+        }
         String raw = OneTimeLoginHandoff.consume();
+        boolean fromStoreQr = storeQrSetupPending;
         try {
             String configured = url.getText().toString().trim();
             LoginCodePayloadParser.ParsedPayload parsed = LoginCodePayloadParser.parse(raw, configured);
             raw = null;
             url.setText(parsed.origin);
-            String origin = persistDisplayConfiguration(parsed.origin, store.getText().toString());
-            String displayUrl = buildDisplayUrl(origin, store.getText().toString().trim());
+            String storeId = store.getText().toString().trim();
+            String origin = fromStoreQr
+                ? ApiOrigin.requireConfigured(parsed.origin).toString()
+                : persistDisplayConfiguration(parsed.origin, storeId);
+            PendingOperation.validateText(storeId, 256);
+            String displayUrl = buildDisplayUrl(origin, storeId);
             String loginUrl = LoginCodePayloadParser.buildTrustedLoginUrl(parsed, displayUrl);
-            OneTimeLoginHandoff.publish(loginUrl);
+            if (fromStoreQr) OneTimeDisplayLoginHandoff.publishWithPendingConfiguration(loginUrl, origin, storeId);
+            else OneTimeDisplayLoginHandoff.publish(loginUrl);
             Intent main = new Intent(this, MainActivity.class);
             // MainActivity uses the standard launch mode, so CLEAR_TOP replaces any stale expired instance.
             main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(main);
             finish();
         } catch (Exception e) {
-            status.setText("Login QR rejected. Use a fresh HTTPS BTCPay login QR for the configured server and enter the Store ID.");
-            status.setVisibility(View.VISIBLE);
+            if (fromStoreQr) restorePreStoreQrFields();
+            showStatus(fromStoreQr
+                ? "Login QR rejected. The scanned Store QR was not saved; scan a fresh BTCPay login QR and try again."
+                : "Login QR rejected. Use a fresh HTTPS BTCPay login QR for the configured server and Store ID.");
+            storeQrSetupPending = false;
         }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean(STATE_STORE_QR_SETUP_PENDING, storeQrSetupPending);
+        state.putBoolean(STATE_CONFIRMING_STORE_QR, confirmingStoreQr);
+        state.putString(STATE_PENDING_STORE_ORIGIN, pendingStoreOrigin);
+        state.putString(STATE_PENDING_STORE_ID, pendingStoreId);
+        state.putString(STATE_PRE_STORE_QR_ORIGIN, preStoreQrOrigin);
+        state.putString(STATE_PRE_STORE_QR_STORE_ID, preStoreQrStoreId);
+        super.onSaveInstanceState(state);
+    }
+
+    private void startStoreQrSetup() {
+        storeQrSetupPending = false;
+        confirmingStoreQr = false;
+        pendingStoreOrigin = null;
+        pendingStoreId = null;
+        preStoreQrOrigin = url.getText().toString();
+        preStoreQrStoreId = store.getText().toString();
+        OneTimeStoreHandoff.clear();
+        OneTimeDisplayLoginHandoff.clear();
+        Intent scan = new Intent(this, LoginCodeScanActivity.class);
+        scan.putExtra(LoginCodeScanActivity.EXTRA_STORE_QR_MODE, true);
+        startActivityForResult(scan, STORE_QR_SCAN_REQUEST);
+    }
+
+    private void confirmStoreQr(StoreQrPayloadParser.ParsedPayload parsed) {
+        confirmingStoreQr = true;
+        pendingStoreOrigin = parsed.origin;
+        pendingStoreId = parsed.storeId;
+        new AlertDialog.Builder(this)
+            .setTitle("Confirm Store QR")
+            .setMessage("BTCPay server: " + parsed.origin + "\nStore ID: " + parsed.storeId)
+            .setPositiveButton("Scan login QR", (dialog, which) -> {
+                clearPendingStoreConfirmation();
+                url.setText(parsed.origin);
+                store.setText(parsed.storeId);
+                showStatus("Store QR confirmed. Scan a fresh BTCPay login QR to finish setup.");
+                startLoginScan(true);
+            })
+            .setNegativeButton("Cancel", (dialog, which) -> {
+                clearPendingStoreConfirmation();
+                clearPreStoreQrFields();
+                storeQrSetupPending = false;
+                showStatus("Store QR setup cancelled. Existing configuration was not changed.");
+            })
+            .setOnCancelListener(dialog -> {
+                clearPendingStoreConfirmation();
+                clearPreStoreQrFields();
+                storeQrSetupPending = false;
+                showStatus("Store QR setup cancelled. Existing configuration was not changed.");
+            })
+            .show();
+    }
+
+    private void clearPendingStoreConfirmation() {
+        confirmingStoreQr = false;
+        pendingStoreOrigin = null;
+        pendingStoreId = null;
+    }
+
+    private void restorePreStoreQrFields() {
+        if (preStoreQrOrigin != null) url.setText(preStoreQrOrigin);
+        if (preStoreQrStoreId != null) store.setText(preStoreQrStoreId);
+        clearPreStoreQrFields();
+    }
+
+    private void clearPreStoreQrFields() {
+        preStoreQrOrigin = null;
+        preStoreQrStoreId = null;
+    }
+
+    private void startLoginScan(boolean afterStoreQr) {
+        storeQrSetupPending = afterStoreQr;
+        OneTimeLoginHandoff.clear();
+        OneTimeDisplayLoginHandoff.clear();
+        startActivityForResult(new Intent(this, LoginCodeScanActivity.class), LOGIN_CODE_SCAN_REQUEST);
+    }
+
+    private void showStatus(String message) {
+        status.setText(message);
+        status.setVisibility(View.VISIBLE);
     }
 
     private void saveDisplayAndLaunch() {
         try {
             persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            OneTimeDisplayLoginHandoff.clear();
             startActivity(new Intent(this, MainActivity.class));
             finish();
         } catch (Exception e) {
@@ -109,19 +251,30 @@ public class SettingsActivity extends Activity {
     }
 
     private String persistDisplayConfiguration(String requestedOrigin, String requestedStore) {
+        SharedPreferences p = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String oldOrigin = p.getString(KEY_BTCPAY_URL, "");
+        String oldStore = p.getString(KEY_STORE_ID, "");
+        String origin = commitDisplayConfiguration(this, requestedOrigin, requestedStore);
+        String storeId = requestedStore == null ? "" : requestedStore.trim();
+        if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
+            device.setText("");
+            token.setText("");
+        }
+        return origin;
+    }
+
+    static String commitDisplayConfiguration(Context context, String requestedOrigin, String requestedStore) {
         String origin = ApiOrigin.requireConfigured(requestedOrigin == null ? "" : requestedOrigin.trim()).toString();
         String storeId = requestedStore == null ? "" : requestedStore.trim();
         PendingOperation.validateText(storeId, 256);
         if (storeId.isEmpty()) throw new IllegalArgumentException();
-        SharedPreferences p = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        SharedPreferences p = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         String oldOrigin = p.getString(KEY_BTCPAY_URL, "");
         String oldStore = p.getString(KEY_STORE_ID, "");
         SharedPreferences.Editor editor = p.edit().putString(KEY_BTCPAY_URL, origin).putString(KEY_STORE_ID, storeId);
         if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
             editor.remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
                 .putBoolean(KEY_ONBOARDED, false).putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false);
-            device.setText("");
-            token.setText("");
         }
         if (!editor.commit()) throw new IllegalStateException();
         return origin;

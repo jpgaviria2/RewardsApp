@@ -12,20 +12,50 @@ public class LoginCodeFlowSourceTest {
     @Test public void settingsExposesNativeLoginScannerAndKeepsScannerProvisioningSeparate() throws Exception {
         String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
         String layout = source("src/main/res/layout/activity_settings.xml");
+        assertTrue(layout.contains("@+id/btn_scan_store_qr"));
+        assertTrue(layout.contains("Scan Store QR, then login QR"));
         assertTrue(layout.contains("@+id/btn_scan_login_code"));
         assertTrue(layout.contains("Scan BTCPay login QR"));
         assertTrue(layout.contains("@+id/btn_save_scanner"));
         assertTrue(settings.contains("new Intent(this, LoginCodeScanActivity.class)"));
+        assertTrue(settings.contains("scan.putExtra(LoginCodeScanActivity.EXTRA_STORE_QR_MODE, true)"));
+        assertTrue(settings.contains("StoreQrPayloadParser.parse(rawStore)"));
+        assertTrue(settings.contains(".setTitle(\"Confirm Store QR\")"));
+        assertTrue(settings.contains(".setPositiveButton(\"Scan login QR\""));
+        assertTrue(settings.contains("startLoginScan(true)"));
         assertTrue(settings.contains("displayConfigurationUsable"));
         assertTrue(settings.contains("scannerConfigurationUsable"));
+    }
+
+    @Test public void storeQrIsNotPersistedUntilLoginQrSucceeds() throws Exception {
+        String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
+        String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
+        String scanner = source("src/main/java/com/bitcoinrewards/nfcdisplay/LoginCodeScanActivity.java");
+        assertTrue(settings.contains("OneTimeDisplayLoginHandoff.publishWithPendingConfiguration"));
+        assertTrue(main.contains("OneTimeDisplayLoginHandoff.consume()"));
+        int pageFinished = main.indexOf("public void onPageFinished");
+        int successfulDisplay = main.indexOf("successfulMainFrame && trustedDisplayUrl.equals(url)", pageFinished);
+        int committed = main.indexOf("SettingsActivity.commitDisplayConfiguration", successfulDisplay);
+        assertTrue(pageFinished >= 0 && successfulDisplay > pageFinished && committed > successfulDisplay);
+        assertFalse(settings.contains("if (fromStoreQr) persistDisplayConfiguration"));
+        assertTrue(settings.contains("The scanned Store QR was not saved"));
+        assertTrue(settings.contains("STATE_STORE_QR_SETUP_PENDING"));
+        assertTrue(settings.contains("state.putBoolean(STATE_STORE_QR_SETUP_PENDING"));
+        assertTrue(settings.contains("STATE_CONFIRMING_STORE_QR"));
+        assertTrue(settings.contains("restorePreStoreQrFields()"));
+        assertTrue(main.contains("STATE_PENDING_DISPLAY_COMMIT"));
+        assertTrue(main.contains("state.putBoolean(STATE_PENDING_DISPLAY_COMMIT"));
+        assertTrue(scanner.contains("StoreQrPayloadParser.parse(payload)"));
+        assertTrue(scanner.contains("Not a valid Store QR"));
     }
 
     @Test public void secretLoginUrlUsesOnlyConsumeOnceProcessMemory() throws Exception {
         String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
         String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
         String scanner = source("src/main/java/com/bitcoinrewards/nfcdisplay/LoginCodeScanActivity.java");
-        assertTrue(settings.contains("OneTimeLoginHandoff.publish(loginUrl)"));
-        assertTrue(main.contains("OneTimeLoginHandoff.consume()"));
+        assertTrue(settings.contains("OneTimeDisplayLoginHandoff.publish(loginUrl)"));
+        assertTrue(settings.contains("OneTimeDisplayLoginHandoff.publishWithPendingConfiguration"));
+        assertTrue(main.contains("OneTimeDisplayLoginHandoff.consume()"));
         assertTrue(scanner.contains("OneTimeLoginHandoff.publish(payload)"));
         assertTrue(settings.contains("String raw = OneTimeLoginHandoff.consume()"));
         assertFalse(main.contains("getStringExtra"));
@@ -53,7 +83,7 @@ public class LoginCodeFlowSourceTest {
         String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
         String manifest = source("src/main/AndroidManifest.xml");
         assertTrue(settings.contains("main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)"));
-        assertTrue(settings.indexOf("OneTimeLoginHandoff.publish(loginUrl)")
+        assertTrue(settings.indexOf("OneTimeDisplayLoginHandoff.publish(loginUrl)")
             < settings.indexOf("main.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)"));
         assertFalse(settings.contains("Intent.FLAG_ACTIVITY_SINGLE_TOP"));
         assertFalse(manifest.contains("android:launchMode=\"singleTop\""));

@@ -45,8 +45,9 @@ public class TokenSecurityTest {
     @Test public void oneTimeLoginCodeUsesProcessMemoryAndNeverIntentOrPreferences() throws Exception {
         String main=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java")),StandardCharsets.UTF_8);
         String settings=new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java")),StandardCharsets.UTF_8);
-        assertTrue(settings.contains("OneTimeLoginHandoff.publish(loginUrl)"));
-        assertTrue(main.contains("OneTimeLoginHandoff.consume()"));
+        assertTrue(settings.contains("OneTimeDisplayLoginHandoff.publish(loginUrl)"));
+        assertTrue(settings.contains("OneTimeDisplayLoginHandoff.publishWithPendingConfiguration"));
+        assertTrue(main.contains("OneTimeDisplayLoginHandoff.consume()"));
         assertFalse(settings.contains("putExtra(MainActivity"));
         assertFalse(main.contains("getStringExtra"));
         assertTrue(main.contains("isTrustedLoginUrl"));
