@@ -71,7 +71,7 @@ public class LoginCodeScanActivity extends Activity {
     private void startScanning() {
         handled = false;
         setStatus(storeQrMode
-            ? "Point camera at the Bitcoin Rewards display Store QR."
+            ? "Point camera at the BTCPay Store ID QR or Bitcoin Rewards display QR."
             : "Point camera at the BTCPay login QR.");
         barcodeView.decodeContinuous(callback);
         barcodeView.resume();
@@ -87,7 +87,7 @@ public class LoginCodeScanActivity extends Activity {
                 try {
                     StoreQrPayloadParser.parse(payload);
                 } catch (IllegalArgumentException e) {
-                    setStatus("Not a valid Store QR. Scan the canonical Bitcoin Rewards display URL.");
+                    setStatus("Not a valid Store QR. Scan the BTCPay Store ID QR or canonical Bitcoin Rewards display URL.");
                     return;
                 }
             }

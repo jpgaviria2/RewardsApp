@@ -17,10 +17,15 @@ final class InlineCheckInAuthentication {
     }
 
     static boolean isLoginExpired(int responseCode) {
-        return (responseCode >= 300 && responseCode < 400) || responseCode == 401 || responseCode == 403;
+        return (responseCode >= 300 && responseCode < 400)
+            || responseCode == 401
+            || responseCode == 403;
     }
 
     static String failureMessage(int responseCode) {
+        if (responseCode == 404) {
+            return "Bitcoin Rewards check-in endpoint was not found; verify the server plugin and Store ID.";
+        }
         if (responseCode == 403) {
             return "BTCPay denied check-in; the logged-in account may be missing store-settings permission.";
         }

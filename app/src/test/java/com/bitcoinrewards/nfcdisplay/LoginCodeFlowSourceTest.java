@@ -22,12 +22,14 @@ public class LoginCodeFlowSourceTest {
         assertTrue(settings.contains("StoreQrPayloadParser.parse(rawStore)"));
         assertTrue(settings.contains(".setTitle(\"Confirm Store QR\")"));
         assertTrue(settings.contains(".setPositiveButton(\"Scan login QR\""));
+        assertTrue(settings.contains("The BTCPay server will be read from the login QR."));
+        assertTrue(settings.contains("url.setText(hasOrigin ? parsed.origin : \"\")"));
         assertTrue(settings.contains("startLoginScan(true)"));
         assertTrue(settings.contains("displayConfigurationUsable"));
         assertTrue(settings.contains("scannerConfigurationUsable"));
     }
 
-    @Test public void storeQrIsNotPersistedUntilLoginQrSucceeds() throws Exception {
+    @Test public void storeQrIsNotPersistedAndScannerDoesNotOpenUntilCheckInAccessIsVerified() throws Exception {
         String settings = source("src/main/java/com/bitcoinrewards/nfcdisplay/SettingsActivity.java");
         String main = source("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java");
         String scanner = source("src/main/java/com/bitcoinrewards/nfcdisplay/LoginCodeScanActivity.java");
@@ -35,14 +37,27 @@ public class LoginCodeFlowSourceTest {
         assertTrue(main.contains("OneTimeDisplayLoginHandoff.consume()"));
         int pageFinished = main.indexOf("public void onPageFinished");
         int successfulDisplay = main.indexOf("successfulMainFrame && trustedDisplayUrl.equals(url)", pageFinished);
-        int committed = main.indexOf("SettingsActivity.commitDisplayConfiguration", successfulDisplay);
-        assertTrue(pageFinished >= 0 && successfulDisplay > pageFinished && committed > successfulDisplay);
+        int scrubbed = main.indexOf("scrubCompletedLoginExchange(view)", successfulDisplay);
+        int probe = main.indexOf("beginCheckInCapabilityProbe(view, url)", successfulDisplay);
+        int authorizedCallback = main.indexOf("if (authorized) finishAuthorizedDisplay", probe);
+        int authorizedMethod = main.indexOf("private void finishAuthorizedDisplay");
+        int committed = main.indexOf("SettingsActivity.commitDisplayConfiguration", authorizedMethod);
+        assertTrue(pageFinished >= 0 && successfulDisplay > pageFinished);
+        assertTrue(scrubbed > successfulDisplay && probe > scrubbed);
+        assertTrue(authorizedCallback > probe && authorizedMethod > pageFinished && committed > authorizedMethod);
+        assertTrue(main.contains("scannerPageEligible = false;\n                    updateInlineScannerState();\n                    beginCheckInCapabilityProbe"));
+        assertTrue(main.contains("scannerPageEligible = checkInCapabilityVerified && successfulMainFrame"));
+        assertTrue(main.contains("checkInCapabilityVerified = true;\n        scannerPageEligible = checkInCapabilityVerified"));
         assertFalse(settings.contains("if (fromStoreQr) persistDisplayConfiguration"));
         assertTrue(settings.contains("The scanned Store QR was not saved"));
         assertTrue(settings.contains("STATE_STORE_QR_SETUP_PENDING"));
         assertTrue(settings.contains("state.putBoolean(STATE_STORE_QR_SETUP_PENDING"));
         assertTrue(settings.contains("STATE_CONFIRMING_STORE_QR"));
         assertTrue(settings.contains("restorePreStoreQrFields()"));
+        assertTrue(settings.contains("if (storeQrSetupPending && pendingStoreOrigin != null && pendingStoreId != null)"));
+        assertTrue(settings.contains("String configured = fromStoreQr && pendingStoreOrigin != null"));
+        assertTrue(settings.contains("String storeId = fromStoreQr && pendingStoreId != null"));
+        assertTrue(settings.contains(".setPositiveButton(\"Scan login QR\", (dialog, which) -> {\n                confirmingStoreQr = false;"));
         assertTrue(main.contains("STATE_PENDING_DISPLAY_COMMIT"));
         assertTrue(main.contains("state.putBoolean(STATE_PENDING_DISPLAY_COMMIT"));
         assertTrue(scanner.contains("StoreQrPayloadParser.parse(payload)"));
@@ -74,6 +89,8 @@ public class LoginCodeFlowSourceTest {
         assertTrue(main.contains("trustedDisplayUrl.equals(url)"));
         assertTrue(main.contains("view.clearHistory()"));
         assertTrue(main.contains("setCacheMode(WebSettings.LOAD_DEFAULT)"));
+        assertTrue(main.contains("private void scrubCompletedLoginExchange(WebView view)"));
+        assertTrue(main.contains("scrubCompletedLoginExchange(view);\n                    checkInCapabilityVerified = false;"));
         assertTrue(main.indexOf("view.clearHistory()") < main.lastIndexOf("setCacheMode(WebSettings.LOAD_DEFAULT)"));
         assertTrue(main.contains("CookieManager.getInstance().setAcceptCookie(true)"));
         assertFalse(main.contains("session_cookies"));

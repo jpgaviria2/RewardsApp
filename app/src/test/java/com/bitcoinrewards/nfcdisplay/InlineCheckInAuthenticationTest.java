@@ -49,6 +49,7 @@ public class InlineCheckInAuthenticationTest {
         assertTrue(InlineCheckInAuthentication.isLoginExpired(308));
         assertTrue(InlineCheckInAuthentication.isLoginExpired(401));
         assertTrue(InlineCheckInAuthentication.isLoginExpired(403));
+        assertFalse(InlineCheckInAuthentication.isLoginExpired(404));
         assertFalse(InlineCheckInAuthentication.isLoginExpired(299));
         assertFalse(InlineCheckInAuthentication.isLoginExpired(400));
         assertFalse(InlineCheckInAuthentication.isLoginExpired(500));
@@ -58,5 +59,6 @@ public class InlineCheckInAuthenticationTest {
         assertTrue(InlineCheckInAuthentication.failureMessage(403).contains("missing store-settings permission"));
         assertEquals("BTCPay login expired; scan login QR again", InlineCheckInAuthentication.failureMessage(302));
         assertEquals("BTCPay login expired; scan login QR again", InlineCheckInAuthentication.failureMessage(401));
+        assertTrue(InlineCheckInAuthentication.failureMessage(404).contains("endpoint was not found"));
     }
 }

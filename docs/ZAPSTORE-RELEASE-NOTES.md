@@ -1,8 +1,8 @@
-# Rewards NFC Display 2.16.0
+# Rewards NFC Display 2.16.1
 
-- Adds QR-only kiosk onboarding: scan the canonical Bitcoin Rewards Store QR, confirm the detected BTCPay server and Store ID, then scan a fresh BTCPay login QR.
-- Removes the need to type the Store ID or login code during the QR setup path while preserving manual server and Store ID entry as a fallback.
-- Rejects malformed, non-HTTPS, foreign-route, credential-bearing, query-bearing, fragmented, or non-canonical Store QR payloads.
-- Keeps the one-time BTCPay login URL only in consume-once process memory and constructs the exact rewards display destination locally.
-- Saves the scanned Store configuration only after the authenticated trusted display loads successfully; cancellation, rejection, or failed login leaves the existing configuration unchanged.
-- Preserves pending non-secret setup state across activity recreation and invalidates scoped scanner metadata only after a successful store change.
+- Accepts BTCPay's native raw Store ID QR as well as the canonical Bitcoin Rewards display QR.
+- Uses the immediately following fresh BTCPay login QR to establish and validate the trusted HTTPS server origin for raw Store IDs.
+- Keeps the camera scanner and NFC reader disabled until the protected rewards check-in API is installed, reachable, and authorized for the current BTCPay session.
+- Keeps pending Store configuration unsaved until both the trusted display and protected check-in capability verification succeed.
+- Distinguishes an expired login from a missing or disabled Bitcoin Rewards server endpoint.
+- Scrubs the one-time login exchange from WebView history before capability verification and preserves confirmed non-secret Store setup through activity recreation.
