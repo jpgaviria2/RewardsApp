@@ -1,0 +1,8 @@
+# Require code-owner reviews in branch protection; this file alone is not enforcement.
+/.github/ @jpgaviria2
+/scripts/ci/ @jpgaviria2
+/app/build.gradle @jpgaviria2
+/gradle/ @jpgaviria2
+/gradlew* @jpgaviria2
+/zapstore.yaml @jpgaviria2
+/docs/CI-CD.md @jpgaviria2
