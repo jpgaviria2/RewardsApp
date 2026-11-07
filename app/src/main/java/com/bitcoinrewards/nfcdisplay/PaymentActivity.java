@@ -229,7 +229,7 @@ public final class PaymentActivity extends Activity {
             .setPositiveButton("Reconcile", (dialog, which) -> {
                 String text = reason.getText().toString().trim();
                 if (text.isEmpty()) { Toast.makeText(this, "A reconciliation reason is required.", Toast.LENGTH_LONG).show(); return; }
-                request(() -> api.reconcileAndRead(operations.id(), text), true, null);
+                request(() -> api.reconcileAndRead(operations, text), true, null);
             }).show();
     }
     private void schedulePoll() {

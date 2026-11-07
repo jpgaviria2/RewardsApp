@@ -30,6 +30,8 @@ public class PaymentModeSourceTest {
         assertTrue(activity.contains("tapGate.allows(ticket"));
         assertTrue(activity.contains("operations.invoiceId()"));
         assertTrue(activity.contains("api.cancelAndRead(operations.id())"));
+        assertTrue(activity.contains("api.reconcileAndRead(operations, text)"));
+        assertFalse(activity.contains("api.reconcileAndRead(operations.id(), text)"));
     }
     @Test public void mainStopsCameraAndRewardsNfcBeforeLaunchAndRecoversPersistedCollection() throws Exception {
         String main = source("MainActivity");
