@@ -1,0 +1,78 @@
+name: Android CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  policy:
+    name: Policy and secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Feature scope (temporary merchant-collection guard)
+        if: github.event_name == 'pull_request' && github.head_ref == 'feature/merchant-collection'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci/feature-scope.py "$BASE" "$HEAD"
+      - name: Install pinned policy tools
+        run: |
+          bash scripts/ci/install-tool.sh gitleaks "$RUNNER_TEMP/ci-bin"
+          bash scripts/ci/install-tool.sh actionlint "$RUNNER_TEMP/ci-bin"
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      - name: Validate workflows
+        run: actionlint -shellcheck= .github/workflows/*.yml
+      - name: Exercise CI guard regressions
+        run: python3 scripts/ci/test-ci.py
+      - name: Scan history without exposing secret values
+        run: bash scripts/ci/secret-scan.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: sanitized-secret-findings
+          path: ci-reports/secret-findings.json
+          if-no-files-found: warn
+          retention-days: 7
+  android:
+    name: Clean Android gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify official Gradle wrapper before execution
+        run: python3 scripts/ci/verify-gradle-wrapper.py
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+      - run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
+      - name: Full clean debug/release lint, unit tests and debug APK
+        run: bash scripts/ci/android-check.sh
+      - name: Require nonzero passing tests in both variants
+        if: always()
+        run: python3 scripts/ci/verify-tests.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: android-debug-and-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+            app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

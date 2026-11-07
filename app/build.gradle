@@ -10,8 +10,8 @@ android {
         applicationId "com.bitcoinrewards.nfcdisplay"
         minSdk 19
         targetSdk 34
-        versionCode 49
-        versionName "2.16.1"
+        versionCode 50
+        versionName "2.17.0"
     }
 
     signingConfigs {

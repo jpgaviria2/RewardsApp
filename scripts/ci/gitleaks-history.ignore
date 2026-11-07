@@ -1,0 +1,2 @@
+# Exact historical fingerprint; rationale documented in docs/CI-CD.md.
+58ff52c80706b912da7649e3a881ef3ff626556b:app/src/main/java/com/bitcoinrewards/nfcdisplay/RewardsScanCoordinator.java:generic-api-key:92

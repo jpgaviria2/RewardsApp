@@ -34,7 +34,9 @@ public class ScannerEntrySourceTest {
         assertTrue(main.contains("WalletQrPayloadParser.parse(result.getText())"));
         assertTrue(main.contains("WalletQrPayloadParser.userFacingRejection(result.getText())"));
         assertTrue(main.contains("body.put(\"lightningAddress\", payload.value)"));
-        assertTrue(main.contains("SettingsActivity.getLegacyCheckInUrl"));
+        assertTrue(main.contains("SettingsActivity.buildLegacyCheckInUrl(requestOrigin, requestStore)"));
+        assertTrue(main.contains("CollectionCheckInStore.successId(connection.getInputStream())"));
+        assertTrue(main.contains(".capture(requestOrigin, requestStore, checkInId)"));
         assertTrue(main.contains("DUPLICATE_SCAN_WINDOW_MS"));
         assertFalse(main.contains("scannerConfigurationUsable(this)"));
         assertFalse(main.contains("new Intent(this, RewardsProfileScanActivity.class)"));

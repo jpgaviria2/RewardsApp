@@ -65,6 +65,21 @@ public class MainActivity extends Activity {
     private static final String STATE_PENDING_DISPLAY_ORIGIN = "pending_display_origin";
     private static final String STATE_PENDING_DISPLAY_STORE = "pending_display_store";
 
+    private volatile long captureEpoch;
+    private boolean collectionWaitingPage;
+    private boolean collectionLaunching;
+    private Button collectPaymentButton;
+    private boolean collectionBlocked() {
+        return collectionLaunching || new PaymentOperationStore(this).exists();
+    }
+    private void openCollection() {
+        if (collectionLaunching || inlineSubmissionInFlight || captureConfirmationVisible) return;
+        captureEpoch++;
+        collectionLaunching = true;
+        updateInlineScannerState();
+        startActivity(new Intent(this, PaymentActivity.class));
+    }
+
     private WebView webView;
     private TextView loadingText;
     private WebOriginPolicy policy;
@@ -185,6 +200,10 @@ public class MainActivity extends Activity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
+        collectPaymentButton = findViewById(R.id.btn_collect_payment);
+        collectPaymentButton.setOnClickListener(v -> {
+            if (activityResumed && scannerPageEligible && checkInCapabilityVerified && collectionWaitingPage) openCollection();
+        });
         webView = findViewById(R.id.webview);
         loadingText = findViewById(R.id.loading_text);
         rewardsScannerPanel = findViewById(R.id.rewards_scanner_panel);
@@ -449,7 +468,16 @@ public class MainActivity extends Activity {
     private void updateInlineScannerState() {
         updateNfcReaderState();
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
-        if (!scannerPageEligible) {
+        if (collectPaymentButton != null) {
+            int visibility = !collectionBlocked() && activityResumed && scannerPageEligible && checkInCapabilityVerified
+                && collectionWaitingPage && !inlineSubmissionInFlight && !captureConfirmationVisible ? View.VISIBLE : View.GONE;
+            if (collectPaymentButton.getVisibility() != visibility) {
+                collectPaymentButton.setVisibility(visibility);
+                View split = findViewById(R.id.main_split_layout);
+                if (split != null) split.post(() -> applyResponsiveExperienceLayout(split));
+            }
+        }
+        if (!scannerPageEligible || collectionBlocked()) {
             rewardsScannerPanel.setVisibility(View.GONE);
             setTutorialActive(false);
             pauseInlineRewardsScanner();
@@ -501,6 +529,7 @@ public class MainActivity extends Activity {
                 boolean explicitWaiting = value != null && value.contains("\\\"state\\\":\\\"waiting\\\"");
                 boolean hasExplicitState = value != null && value.contains("\\\"state\\\":\\\"")
                     && !value.contains("\\\"state\\\":\\\"\\\"");
+                collectionWaitingPage = (explicitWaiting || checkedIn) && !rewardVisible;
                 idleTutorialEligible = explicitWaiting || (!hasExplicitState && !rewardVisible && !checkedIn);
                 if (idleTutorialPanel != null) {
                     idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE : View.GONE);
@@ -511,7 +540,7 @@ public class MainActivity extends Activity {
 
     private void applyResponsiveExperienceLayout(View root) {
         if (root == null || rewardsScannerPanel == null || tutorialFrame == null || root.getHeight() <= 0) return;
-        int availableHeight = root.getHeight();
+        int availableHeight = root.getHeight() - (collectPaymentButton != null && collectPaymentButton.getVisibility() == View.VISIBLE ? collectPaymentButton.getHeight() : 0);
         int scannerHeight = Math.min(dp(410), Math.max(dp(330), Math.round(availableHeight * 0.45f)));
         int lowerHeight = Math.max(0, availableHeight - scannerHeight);
         int tutorialHeight = Math.max(dp(96), Math.min(dp(391), lowerHeight - dp(50)));
@@ -552,7 +581,7 @@ public class MainActivity extends Activity {
 
     private final BarcodeCallback inlineRewardsCallback = new BarcodeCallback() {
         @Override public void barcodeResult(BarcodeResult result) {
-            if (result == null || result.getText() == null || inlineSubmissionInFlight || !scannerPageEligible) return;
+            if (!activityResumed || collectionBlocked() || result == null || result.getText() == null || inlineSubmissionInFlight || !scannerPageEligible) return;
             WalletQrPayloadParser.ParsedPayload payload;
             try {
                 payload = WalletQrPayloadParser.parse(result.getText());
@@ -578,7 +607,7 @@ public class MainActivity extends Activity {
     private void updateNfcReaderState() {
         if (nfcAdapter == null) return;
         nfcReaderGate.update(
-            activityResumed,
+            activityResumed && !collectionBlocked(),
             scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null,
@@ -616,6 +645,7 @@ public class MainActivity extends Activity {
 
     private void onNfcTagDiscovered(Tag tag) {
         if (!nfcReaderGate.shouldSubmit()) return;
+        final long epoch = captureEpoch;
         final String boltcardUrl;
         try {
             boltcardUrl = readBoltcardUrl(tag);
@@ -625,7 +655,7 @@ public class MainActivity extends Activity {
             });
             return;
         }
-        runOnUiThread(() -> submitBoltcardTap(boltcardUrl));
+        runOnUiThread(() -> { if (epoch == captureEpoch) submitBoltcardTap(boltcardUrl); });
     }
 
     private String readBoltcardUrl(Tag tag) throws Exception {
@@ -658,7 +688,7 @@ public class MainActivity extends Activity {
     }
 
     private void submitBoltcardTap(String boltcardUrl) {
-        if (!activityResumed || !nfcReaderGate.shouldSubmit() || inlineSubmissionInFlight || !scannerPageEligible) return;
+        if (collectionBlocked() || !activityResumed || !nfcReaderGate.shouldSubmit() || inlineSubmissionInFlight || !scannerPageEligible) return;
         long now = System.currentTimeMillis();
         if (boltcardUrl.equals(lastSubmittedValue) && now - lastSubmittedAtMs < DUPLICATE_SCAN_WINDOW_MS) return;
         inlineSubmissionInFlight = true;
@@ -804,13 +834,15 @@ public class MainActivity extends Activity {
         @Override protected Boolean doInBackground(Void... ignored) {
             HttpURLConnection connection = null;
             try {
-                String legacyApiUrl = SettingsActivity.getLegacyCheckInUrl(MainActivity.this);
+                String requestOrigin = SettingsActivity.getBtcpayUrl(MainActivity.this);
+                String requestStore = SettingsActivity.getStoreId(MainActivity.this);
+                String legacyApiUrl = SettingsActivity.buildLegacyCheckInUrl(requestOrigin, requestStore);
                 if (legacyApiUrl == null || legacyApiUrl.isEmpty() || isCancelled()) return false;
                 String apiUrl = boltcardUrl == null
                     ? legacyApiUrl
                     : BoltcardCheckInEndpoint.fromLegacyCheckInUrl(legacyApiUrl);
                 String cookie = InlineCheckInAuthentication.cookieForTrustedApi(
-                    SettingsActivity.getBtcpayUrl(MainActivity.this),
+                    requestOrigin,
                     apiUrl,
                     url -> CookieManager.getInstance().getCookie(url));
                 if (cookie == null) {
@@ -836,7 +868,12 @@ public class MainActivity extends Activity {
                 }
                 responseCode = connection.getResponseCode();
                 loginExpired = InlineCheckInAuthentication.isLoginExpired(responseCode);
-                return responseCode >= 200 && responseCode < 300;
+                if (responseCode < 200 || responseCode >= 300) return false;
+                String checkInId = null;
+                try {
+                    if (connection.getContentLength() <= 32768) checkInId = CollectionCheckInStore.successId(connection.getInputStream());
+                } catch (Exception ignoredBody) { /* Legacy success stays compatible; never reuse a previous customer. */ }
+                return new CollectionCheckInStore(MainActivity.this).capture(requestOrigin, requestStore, checkInId);
             } catch (Exception e) {
                 return false;
             } finally {
@@ -888,10 +925,19 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         activityResumed = true;
+        boolean returningFromCollection = collectionLaunching;
+        collectionLaunching = false;
+        if (new PaymentOperationStore(this).exists()) { openCollection(); return; }
+        if (returningFromCollection && webView != null) {
+            collectionWaitingPage = false;
+            scannerPageEligible = false;
+            webView.loadUrl(trustedDisplayUrl);
+        }
         updateInlineScannerState();
     }
 
     @Override protected void onPause() {
+        captureEpoch++;
         activityResumed = false;
         setTutorialActive(false);
         nfcReaderGate.update(false, scannerPageEligible,

@@ -10,6 +10,14 @@
         android:orientation="vertical"
         android:background="@color/rewards_green">
 
+        <Button
+            android:id="@+id/btn_collect_payment"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginEnd="64dp"
+            android:text="Collect payment"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/rewards_scanner_panel"
             android:layout_width="match_parent"
