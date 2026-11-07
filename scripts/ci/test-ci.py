@@ -169,13 +169,18 @@ class Gates(unittest.TestCase):
         runs = {"workflow_runs": [{"head_sha":sha, "head_branch":"main", "event":"push", "conclusion":conclusion, "id":2}]}
         gh = tools / "gh"
         statuses = [] if review is None else [{"context": "Independent OpenCode review", "state": review, "id": 1,
-                                              "creator": {"id": review_creator}}]
+                                              "creator": {"id": review_creator},
+                                              "url": f"https://api.github.com/repos/fixture/fixture/statuses/{review_sha or sha}"}]
         if newer_review is not None:
             statuses.append({"context": "Independent OpenCode review", "state": newer_review, "id": 2,
-                             "creator": {"id": newer_creator}})
-        pages = [{"sha": review_sha or sha, "statuses": statuses}]
-        gh.write_text("#!/usr/bin/env python3\nimport sys\nprint(" + repr(json.dumps(pages)) +
-                      " if '--slurp' in sys.argv else " + repr(json.dumps(runs)) + ")\n")
+                             "creator": {"id": newer_creator},
+                             "url": f"https://api.github.com/repos/fixture/fixture/statuses/{review_sha or sha}"})
+        pages = [statuses]
+        gh.write_text("#!/usr/bin/env python3\nimport sys\n"
+                      "if '--slurp' in sys.argv:\n"
+                      "    assert any('/commits/" + sha + "/statuses?' in arg for arg in sys.argv), 'Use status-list endpoint with creator identity'\n"
+                      "    print(" + repr(json.dumps(pages)) + ")\n"
+                      "else:\n    print(" + repr(json.dumps(runs)) + ")\n")
         gh.chmod(0o755)
         env = dict(os.environ, GITHUB_REF="refs/heads/main", GITHUB_REPOSITORY="fixture/fixture",
                    INDEPENDENT_REVIEW_PRODUCER_ID="98620768", PATH=str(tools) + os.pathsep + os.environ["PATH"])

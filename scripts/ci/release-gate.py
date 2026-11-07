@@ -26,11 +26,15 @@ runs = [r for r in runs if r["head_sha"] == sha and r["head_branch"] == "main" a
 if not runs or max(runs, key=lambda r: r["id"])["conclusion"] != "success":
     raise SystemExit("Latest main push Android CI for exact reviewed SHA must succeed")
 review_pages = json.loads(out("gh", "api", "--paginate", "--slurp",
-                              f"repos/{repo}/commits/{sha}/status?per_page=100"))
-if not review_pages or any(page.get("sha") != sha for page in review_pages):
-    raise SystemExit("Independent review status response must identify exact reviewed SHA")
-reviews = [status for page in review_pages for status in page.get("statuses", [])
+                              f"repos/{repo}/commits/{sha}/statuses?per_page=100"))
+# The combined /status endpoint omits creator. The /statuses list retains it.
+if not isinstance(review_pages, list) or any(not isinstance(page, list) for page in review_pages):
+    raise SystemExit("Independent review status response must be paginated status lists")
+reviews = [status for page in review_pages for status in page
            if status.get("context") == "Independent OpenCode review"]
+expected_status_url = f"https://api.github.com/repos/{repo}/statuses/{sha}"
+if any(status.get("url") != expected_status_url for status in reviews):
+    raise SystemExit("Independent review status response must identify exact reviewed SHA")
 if not reviews or max(reviews, key=lambda status: status["id"])["state"] != "success":
     raise SystemExit("Independent OpenCode review must succeed on exact reviewed SHA")
 producer = os.environ.get("INDEPENDENT_REVIEW_PRODUCER_ID", "")
