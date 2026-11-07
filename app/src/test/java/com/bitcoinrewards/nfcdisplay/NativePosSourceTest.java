@@ -36,6 +36,7 @@ public class NativePosSourceTest {
         String pos = source("NativePosActivity");
         for (String forbidden : new String[]{"enableReaderMode", "BarcodeCallback", "addJavascriptInterface", "PaymentApi", "api.create", "getCookie(", "setCookie(", "saveState(", "restoreState(", "SslErrorHandler.proceed"}) assertFalse(forbidden, pos.contains(forbidden));
         assertTrue(pos.contains("NdefHostCardEmulationService.clearPayload()"));
+        assertTrue(pos.contains("Back does not cancel a BTCPay invoice"));
         assertTrue(pos.contains("request.deny()"));
         assertTrue(pos.contains("handler.cancel()"));
         assertTrue(pos.contains("setAcceptThirdPartyCookies(web, false)"));

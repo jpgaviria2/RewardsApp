@@ -35,6 +35,9 @@ public final class NativePosActivity extends Activity {
         history.setText("Previous custom payments / recovery");
         history.setOnClickListener(v -> recovery());
         root.addView(history);
+        TextView caution = new TextView(this);
+        caution.setText("Back does not cancel a BTCPay invoice. Before charging again, check any previous checkout in BTCPay; it may still be payable.");
+        root.addView(caution);
         setContentView(root);
         if (state != null) {
             TextView warning = new TextView(this);
