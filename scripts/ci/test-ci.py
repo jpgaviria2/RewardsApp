@@ -32,6 +32,43 @@ class Gates(unittest.TestCase):
         self.root = pathlib.Path(self.temp.name)
     def tearDown(self):
         self.temp.cleanup()
+    def wrapper_fixture(self):
+        folder = self.root / "gradle/wrapper"
+        folder.mkdir(parents=True)
+        for name in ("gradle-wrapper.jar", "gradle-wrapper.properties"):
+            shutil.copyfile(SCRIPTS.parent.parent / "gradle/wrapper" / name, folder / name)
+        return folder
+    def test_wrapper_original_and_tampered_copy(self):
+        folder = self.wrapper_fixture()
+        self.assertEqual(run("verify-gradle-wrapper.py", self.root).returncode, 0)
+        with (folder / "gradle-wrapper.jar").open("ab") as artifact:
+            artifact.write(b"fixture tamper")
+        p = run("verify-gradle-wrapper.py", self.root)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("checksum mismatch", p.stderr)
+    def test_wrapper_distribution_pin_cannot_be_removed(self):
+        folder = self.wrapper_fixture()
+        path = folder / "gradle-wrapper.properties"
+        path.write_text("\n".join(line for line in path.read_text().splitlines() if not line.startswith("distributionSha256Sum=")))
+        self.assertNotEqual(run("verify-gradle-wrapper.py", self.root).returncode, 0)
+    def test_gradle_gates_require_strict_verification_before_execution(self):
+        for name in ("android-check.sh", "sign-release.sh"):
+            text = (SCRIPTS / name).read_text()
+            self.assertIn("--dependency-verification strict", text)
+            self.assertLess(text.index("verify-gradle-wrapper.py"), text.index("./gradlew"))
+    def test_scope_accepts_only_exact_integrity_paths(self):
+        base = self.init_git()
+        for name in ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.properties", "gradle/wrapper/gradle-wrapper.jar", "gradle/verification-metadata.xml"):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+        self.git("add", ".")
+        self.git("commit", "-qm", "integrity fixture")
+        self.assertEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
+        (self.root / "gradle/unrelated.gradle").write_text("unrelated")
+        self.git("add", ".")
+        self.git("commit", "-qm", "unrelated gradle fixture")
+        self.assertNotEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
     def reports(self, **counts):
         for variant in ("testDebugUnitTest", "testReleaseUnitTest"):
             folder = self.root / variant
@@ -114,7 +151,7 @@ class Gates(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "unrelated scanner")
         self.assertNotEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
-    def release_fixture(self, conclusion="success", version="1.2.3"):
+    def release_fixture(self, conclusion="success", version="1.2.3", review="success", review_sha=None, newer_review=None):
         self.init_git()
         self.git("branch", "-M", "main")
         app = self.root / "app"
@@ -130,7 +167,12 @@ class Gates(unittest.TestCase):
         tools.mkdir()
         runs = {"workflow_runs": [{"head_sha":sha, "head_branch":"main", "event":"push", "conclusion":conclusion, "id":2}]}
         gh = tools / "gh"
-        gh.write_text("#!/usr/bin/env python3\nprint(" + repr(json.dumps(runs)) + ")\n")
+        statuses = [] if review is None else [{"context": "Independent OpenCode review", "state": review, "id": 1}]
+        if newer_review is not None:
+            statuses.append({"context": "Independent OpenCode review", "state": newer_review, "id": 2})
+        pages = [{"sha": review_sha or sha, "statuses": statuses}]
+        gh.write_text("#!/usr/bin/env python3\nimport sys\nprint(" + repr(json.dumps(pages)) +
+                      " if '--slurp' in sys.argv else " + repr(json.dumps(runs)) + ")\n")
         gh.chmod(0o755)
         env = dict(os.environ, GITHUB_REF="refs/heads/main", GITHUB_REPOSITORY="fixture/fixture", PATH=str(tools) + os.pathsep + os.environ["PATH"])
         return sha, env
@@ -138,6 +180,31 @@ class Gates(unittest.TestCase):
         sha, env = self.release_fixture()
         p = run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
+    def test_release_missing_independent_review(self):
+        sha, env = self.release_fixture(review=None)
+        p = run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("Independent OpenCode review must succeed", p.stderr)
+    def test_release_failed_or_pending_independent_review(self):
+        for state in ("failure", "pending", "error"):
+            with self.subTest(state=state):
+                # Each nested case needs its own independent repository fixture.
+                with tempfile.TemporaryDirectory() as temp:
+                    original = self.root
+                    self.root = pathlib.Path(temp)
+                    try:
+                        sha, env = self.release_fixture(review=state)
+                        p = run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env)
+                        self.assertNotEqual(p.returncode, 0)
+                        self.assertIn("Independent OpenCode review must succeed", p.stderr)
+                    finally:
+                        self.root = original
+    def test_release_review_wrong_sha(self):
+        sha, env = self.release_fixture(review_sha="0" * 40)
+        self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)
+    def test_release_newer_review_failure_overrides_old_success(self):
+        sha, env = self.release_fixture(newer_review="failure")
+        self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)
     def test_release_failed_main_ci(self):
         sha, env = self.release_fixture(conclusion="failure")
         self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)

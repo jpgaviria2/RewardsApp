@@ -25,6 +25,14 @@ runs = json.loads(out("gh", "api", f"repos/{repo}/actions/workflows/android-ci.y
 runs = [r for r in runs if r["head_sha"] == sha and r["head_branch"] == "main" and r["event"] == "push"]
 if not runs or max(runs, key=lambda r: r["id"])["conclusion"] != "success":
     raise SystemExit("Latest main push Android CI for exact reviewed SHA must succeed")
+review_pages = json.loads(out("gh", "api", "--paginate", "--slurp",
+                              f"repos/{repo}/commits/{sha}/status?per_page=100"))
+if not review_pages or any(page.get("sha") != sha for page in review_pages):
+    raise SystemExit("Independent review status response must identify exact reviewed SHA")
+reviews = [status for page in review_pages for status in page.get("statuses", [])
+           if status.get("context") == "Independent OpenCode review"]
+if not reviews or max(reviews, key=lambda status: status["id"])["state"] != "success":
+    raise SystemExit("Independent OpenCode review must succeed on exact reviewed SHA")
 source = out("git", "show", f"{sha}:app/build.gradle")
 versions = re.findall(r'versionName\s+"([^"\n]+)"', source)
 if versions != [tag[1:]]:
@@ -33,4 +41,4 @@ expected = f"https://github.com/{repo}/releases/download/{tag}/rewards-nfc-displ
 manifest = out("git", "show", f"{sha}:zapstore.yaml")
 if f"release_source: {expected}" not in manifest.splitlines():
     raise SystemExit("Zapstore canonical release source mismatch")
-print(f"Release source accepted: {sha} {tag}; exact main CI successful")
+print(f"Release source accepted: {sha} {tag}; exact main CI and Independent OpenCode review successful")

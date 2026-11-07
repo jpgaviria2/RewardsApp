@@ -9,13 +9,14 @@ set -euo pipefail
 tag=${1:?existing reviewed tag}
 [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $ANDROID_RELEASE_CERT_SHA256 =~ ^[0-9a-fA-F]{64}$ ]]
+python3 scripts/ci/verify-gradle-wrapper.py
 keydir=$(mktemp -d)
 trap 'rm -rf "$keydir"' EXIT
 umask 077
 export REWARDS_NFC_KEYSTORE="$keydir/preserved-release.jks"
 printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$REWARDS_NFC_KEYSTORE"
 unset ANDROID_KEYSTORE_BASE64
-./gradlew clean lintDebug testDebugUnitTest testReleaseUnitTest assembleRelease --no-daemon --no-build-cache --rerun-tasks
+./gradlew clean lintDebug lintRelease testDebugUnitTest testReleaseUnitTest assembleRelease --no-daemon --no-build-cache --rerun-tasks --dependency-verification strict
 python3 scripts/ci/verify-tests.py
 apk=app/build/outputs/apk/release/app-release.apk
 "${ANDROID_HOME:?}/build-tools/34.0.0/aapt" dump badging "$apk" > "$keydir/badging.txt"

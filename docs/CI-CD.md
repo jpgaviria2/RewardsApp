@@ -11,16 +11,25 @@ repository/environment secrets**. There is no `pull_request_target`, privileged
 All Actions are pinned to full commit IDs. Policy binaries are official release
 assets pinned by version and SHA-256; updates require review of both.
 
-Required checks (select their actual check names after the first PR run):
+Required contexts on `main` (live snapshot below):
 
 - **Policy and secrets**: temporary feature scope; actionlint syntax/expression
   checks; CI-script regression tests; Gitleaks history scan.
 - **Clean Android gate**: `clean lintDebug lintRelease testDebugUnitTest
-  testReleaseUnitTest assembleDebug --no-daemon --no-build-cache --rerun-tasks`.
+  testReleaseUnitTest assembleDebug --no-daemon --no-build-cache --rerun-tasks
+  --dependency-verification strict`. Wrapper preflight and an isolated real Gradle
+  checksum-negative fixture run before this clean gate.
   XML reports must exist for **both** variants, each with at least one executed,
   non-skipped passing test and no failure/error. Missing tests are failure,
   never an acceptable `NO-SOURCE` result. Gradle failure is never masked by an
   artifact upload; a separate always-run XML check reports missing tests.
+
+- **Independent OpenCode review**: externally posted exact-commit status, not a
+  self-approving Actions job. The reviewing operator posts success only after
+  actual independent review of the final source, and verifies merge-tree identity
+  before carrying evidence onto a merge commit. A new source change invalidates
+  that evidence. Missing, pending, error, or failed status blocks release. This
+  is model review, **not an independent human approval**.
 
 Reports, XML and debug APK are retained 14 days even after failure (if produced).
 Sanitized secret finding locations are retained 7 days. Raw secret reports/logs
@@ -41,61 +50,114 @@ a security boundary: a contributor can rename their branch or propose changes
 to the allowlist. Review such changes as carefully as app code; remove/replace
 the feature-specific check in a separately reviewed follow-up after merge.
 
-## Mandatory repository settings (not changed by this patch)
+## Live configuration snapshot and remaining hardening
 
-1. Protect `main` with a ruleset/branch protection: PR-only updates, both checks
-   above required, branch up-to-date before merge, conversations resolved,
-   at least one independent approval, stale approvals dismissed on new commits,
-   latest push independently approved, required CODEOWNER review, no force pushes
-   or deletions, no bypass including administrators. Add an eligible independent
-   reviewer/team if `@jpgaviria2` is also the author; self-review is not approval.
-2. Protect `v*` tags from update/deletion. Limit tag creation to authorized release
-   maintainers. Do not use a generic arbitrary-tag automatic publisher.
-3. Actions default workflow permissions read-only, do not permit Actions to
-   approve PRs, require approval of outside/fork contributors, restrict allowed
-   Actions to the pinned dependencies used here. Do not expose signing or Nostr
-   credentials as repository-wide secrets or on self-hosted PR runners.
-4. Create **release-signing** and **release-publication** environments, both
-   restricted to protected `main`, independent required reviewers, prevent
-   self-review, disallow administrator bypass. Do this **before** installing
-   signing secrets: a YAML environment name alone does not configure protection.
-5. Require reviewers of `.github/`, `scripts/ci/`, wrapper/build tooling and
-   release metadata. CODEOWNERS is included but has no enforcement without
-   the settings above. Review dependency/build script changes because signing
-   executes the reviewed Gradle build with the production signer available.
+Read back with `/opt/data/bin/gh` on **2026-11-07** after the coordinating
+operator's authorized configuration (this build-integrity patch performs no
+remote writes):
 
-### Read-only inventory at implementation time
-
-Inspected with `/opt/data/bin/gh` on 2026-11-07:
-
-- Repository Actions secret names: **none**, API `total_count: 0`.
-- Environments: **none**, API `total_count: 0` (therefore no environment secrets).
-- `main` branch protection: API returned **404 Branch not protected**.
-- No existing checked-in or registered Actions workflows were found initially.
-
-These are honest setup blockers, not configured guarantees. No settings, secrets,
-keys, tags, remote branches or releases were created/changed by this patch.
-An organization-level secret inventory was not established (the authenticated
-account lacks `read:org`); no organization secret availability is assumed.
-
-Configure these **names only**, in `release-signing`, through an approved secret
-channel, never chat/logs/commits:
+- `main` requires a PR, strict/up-to-date **Policy and secrets**, **Clean Android
+  gate**, and **Independent OpenCode review** contexts; administrator enforcement
+  and conversation resolution are enabled. Force pushes/deletions are disabled.
+- Human approving-review count is **0**; CODEOWNER review and latest-push human
+  approval are **not required**. No eligible second human account was configured.
+  Stale-review dismissal alone is not an independent approval guarantee.
+- `release-signing` and `release-publication` exist with protected-branch-only
+  deployment policy. YAML further restricts execution to `main`. They have **no
+  required human reviewer**, and `can_admins_bypass` is **true**. The job/environment
+  names do not mean human release approval is enforced. A trusted-main manual
+  dispatch can proceed once the source/CI/external-review gates pass.
+- `release-signing` has exactly the following four secret **names** and one
+  certificate variable. API inspection verifies existence, not secret values.
+  The coordinating operator reports uploading the preserved matching production
+  signer; this patch never reads/decrypts it or signs an APK.
 
 | Secret/variable | Requirement |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` (secret) | Base64 of the **existing** production keystore, not a generated replacement |
+| `ANDROID_KEYSTORE_BASE64` (secret) | Existing production keystore, never a generated replacement |
 | `REWARDS_NFC_KEYSTORE_PASSWORD` (secret) | Existing store password |
 | `REWARDS_NFC_KEY_ALIAS` (secret) | Existing production alias |
 | `REWARDS_NFC_KEY_PASSWORD` (secret) | Existing key password |
-| `ANDROID_RELEASE_CERT_SHA256` (environment variable) | 64 hex characters independently verified against installed/previous production APK certificate |
+| `ANDROID_RELEASE_CERT_SHA256` (variable) | `44d1aef5aeb847cf4d4ff1f7387fecb971dc8c163681b26921cf70141c282b16` |
 
-All four secret names and the certificate variable are currently unconfigured.
-The persistent workstation signing files remain untouched:
-`.secrets/rewards-nfc-release-keystore.jks` and
-`.secrets/rewards-nfc-release.properties`. **Never generate a new key.**
-GitHub publication uses the built-in `GITHUB_TOKEN` only in its own job with
-`contents: write` and `actions: read`; no PAT is requested. Zapstore Nostr signing
-stays local and is deliberately **not** added to PR or GitHub release secrets.
+No production signing, tags, push, publication, or releases were performed by
+this build-integrity patch. Workstation signer files remain untouched. The Nostr
+key stays local, outside GitHub. Publication gets `contents: write` only in its
+separate job; source review status reads require `statuses: read`.
+
+Remaining recommended controls, **not claimed configured**: eligible independent
+human PR/CODEOWNER approvals, required release-environment human reviewers and
+no administrator bypass, immutable `v*` tag protection, allowed-Actions policy
+and fork approval policy. Protect status-posting credentials: the external
+review context is not bound to a GitHub App (`app_id: null`), so an authorized
+status writer could forge it. It is a trusted-operator signal, not cryptographic
+attestation. Organization-level secret availability is not established.
+
+## Gradle artifact integrity and bootstrap trust
+
+Gradle stays **8.4**, AGP stays **8.2.2**, and all four direct application/test
+coordinates retain their exact versions (material 1.11.0, zxing 4.3.0, JUnit
+4.13.2, org.json 20231013). No application source or dependency version upgrades
+are included. The old launcher/JAR pair was not the official 8.4 wrapper;
+`gradlew`, `gradlew.bat`, and the JAR are now the matching upstream `v8.4.0`
+wrapper files. The official 8.4 JAR uses `GradleWrapperMain` with a classpath,
+not the previous launcher's executable-JAR invocation.
+
+Official HTTPS checksum sources fetched on 2026-11-07:
+
+- `https://services.gradle.org/distributions/gradle-8.4-bin.zip.sha256`:
+  `3e1af3ae886920c3ac87f7a91f816c0c7c436f276a6eefdb3da152100fef72ae`
+- `https://services.gradle.org/distributions/gradle-8.4-wrapper.jar.sha256`:
+  `0336f591bc0ec9aa0c9988929b93ecc916b3c1d52aed202c7381db144aa0ef15`
+
+The JAR was fetched from
+`https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar`
+and matched the official published hash. Both launchers come from that same
+upstream tag. `verify-gradle-wrapper.py` checks the exact JAR hash, expected
+HTTPS distribution URL, checksum pin and URL-validation setting **before Java
+executes**, in CI and in the signing script. The wrapper's own distribution
+checksum validation protects new distribution installations; it does not rehash
+an already-extracted local Gradle installation. CI uses fresh hosted runners,
+without restored Gradle caches. Local Gradle/JDK/SDK installations still need a
+trusted operator and filesystem.
+
+`gradle/verification-metadata.xml` pins **477 SHA-256 entries for 477 artifacts
+across 275 components**, including AGP/buildscript transitives, AndroidX,
+debug/release test and runtime artifacts, lint and their resolved metadata.
+`verify-metadata` is true; there are **no trusted-artifact wildcards, missing-hash
+exceptions or ignored components**. Strict verification is explicit in both
+clean CI and production-signing Gradle commands. New unrecognized versions or
+artifact bytes fail instead of silently expanding trust. This uses strict
+checksum metadata rather than dependency lockfiles; version constraints remain
+unchanged. Platform-specific artifacts not in the reviewed metadata fail closed;
+new OS/architecture support needs a deliberate metadata review.
+
+Bootstrap provenance is **trust on first use**, not signed certification:
+Gradle generated SHA-256 metadata from the actual artifacts resolved by the full
+clean lint/test/debug-assembly gate, including its local dependency cache. An
+independent fetch of **every one of the 477 recorded artifacts** from the
+configured official Google Maven (`https://dl.google.com/dl/android/maven2/`)
+or Maven Central (`https://repo.maven.apache.org/maven2/`) HTTPS repositories
+then matched all 477 hashes. This confirms repository-served bytes at bootstrap;
+it does not prove publisher identity, uncompromised upstream source, signatures,
+or reproducible builds. Signature verification is explicitly false. Android SDK,
+JDK, hosted runner images, and executable downloaded policy tools are separate
+trust inputs, not covered by Gradle dependency metadata. Checksums do not make
+reviewed malicious build scripts safe with signing secrets available.
+
+`test-gradle-integrity.py` builds a fresh isolated local-Maven JAR fixture, checks
+that Gradle accepts its pinned original, changes only that fixture, then requires
+a nonzero **Dependency verification failed** result and a report identifying
+its pinned artifact/hash. It never tampers with production dependencies. The
+Python CI suite also accepts an original copied wrapper and rejects a changed
+copy and removed distribution checksum. No real artifact is grandfathered.
+
+For an intentional dependency change, review coordinates and upstream source,
+then bootstrap in a credential-free environment with the same full clean task
+list and `--write-verification-metadata sha256`. Independently check new hashes
+against the configured repository downloads, inspect the XML diff, and rerun
+without the write flag under `--dependency-verification strict`. Never use
+`off`/`lenient`, broad trust entries, or auto-regeneration in CI to hide failures.
 
 ## Reviewed GitHub release pipeline (manual, not run by this patch)
 
@@ -117,16 +179,20 @@ stays local and is deliberately **not** added to PR or GitHub release secrets.
      remote main tip (therefore also main ancestry);
    - existing tag resolves to exactly that SHA;
    - latest main-push `Android CI` run for that exact SHA succeeded;
+   - latest **Independent OpenCode review** status for that exact SHA is success
+     (all response pages checked, SHA identity required; no absent-status bypass);
    - tag equals app versionName and Zapstore release_source names the exact
      expected GitHub repository/tag/production APK.
-4. `release-signing` reviewer confirms the exact SHA, acceptance and certificate.
-   Signing reruns clean lint, both unit variants and `assembleRelease`, rejects
+4. The operator confirms exact SHA, acceptance and certificate before dispatch;
+   no environment human-review gate is currently configured. Signing verifies the
+   official wrapper then reruns clean debug/release lint, both unit variants and
+   `assembleRelease` under strict dependency verification, rejects
    missing secrets, verifies the APK signature with `apksigner`, and requires the
    independently established certificate hash. Private temporary keystore is
    removed on exit. Only the signed APK, SHA256 and source SHA leave the job;
    never the keystore/properties. Secrets are not available to policy/PR jobs.
-5. A separate `release-publication` approval grants only that job write access.
-   It downloads the artifact from this same run, rechecks source/main/tag/CI,
+5. The separate `release-publication` job (no required human approval currently)
+   receives publication write access. It downloads the artifact from this same run, rechecks source/main/tag/CI,
    source SHA and APK checksum; refuses any existing release; publishes APK and
    checksum without clobber; reads back non-draft/non-prerelease state, downloads
    public APK and compares bytes, and verifies latest-release discovery.
@@ -193,7 +259,7 @@ git diff --check
 `test-ci.py` uses isolated scratch Git/XML/CLI fixtures (no production credentials
 or external writes), covers passing/failing/missing/zero/skipped test reports,
 feature allow/reject cases, malformed source inputs, non-main dispatch, exact
-main/tag/version/CI release gates, missing signing secrets and real Gitleaks
+main/tag/version/CI/external-review release gates, missing signing secrets and real Gitleaks
 finding sanitization. Fixture CI responses are test doubles, **not** a claim
 that GitHub Actions ran. Signed build/publication require configured credentials
 and human authorization and are not exercised by these tests.

@@ -9,6 +9,8 @@ allowed = {
     "app/src/main/res/layout/activity_main.xml",
     "docs/MERCHANT-COLLECTION-ACCEPTANCE.md", "docs/ZAPSTORE-RELEASE-NOTES.md",
     "zapstore.yaml",
+    "gradle/wrapper/gradle-wrapper.properties", "gradle/wrapper/gradle-wrapper.jar",
+    "gradlew", "gradlew.bat", "gradle/verification-metadata.xml",
     "app/src/main/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStore.java",
     "app/src/test/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStoreTest.java",
     "app/src/test/java/com/bitcoinrewards/nfcdisplay/ScannerEntrySourceTest.java",
