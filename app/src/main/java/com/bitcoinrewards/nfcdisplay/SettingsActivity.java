@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String KEY_TOKEN_FINGERPRINT = "scanner_token_fingerprint", KEY_TOKEN_GENERATION = "scanner_token_generation", KEY_ONBOARDED = "onboarded";
     static final String KEY_CREDENTIAL_UPDATE_PENDING = "credential_update_pending";
 
-    private EditText url, store, device, token;
+    private EditText url, store, device, token, pos;
     private TextView status;
     private boolean storeQrSetupPending;
     private boolean confirmingStoreQr;
@@ -43,6 +43,8 @@ public class SettingsActivity extends Activity {
         store = findViewById(R.id.input_store_id);
         device = findViewById(R.id.input_check_in_device_id);
         token = findViewById(R.id.input_check_in_token);
+        pos = findViewById(R.id.input_pos_url);
+        pos.setText(getPosUrl(this));
         status = findViewById(R.id.status_text);
         storeQrSetupPending = state != null && state.getBoolean(STATE_STORE_QR_SETUP_PENDING, false);
         confirmingStoreQr = state != null && state.getBoolean(STATE_CONFIRMING_STORE_QR, false);
@@ -239,12 +241,16 @@ public class SettingsActivity extends Activity {
 
     private void saveDisplayAndLaunch() {
         try {
+            String requestedPos = pos.getText().toString().trim();
+            String validatedPos = requestedPos.isEmpty() ? "" : PosUrlPolicy.require(url.getText().toString().trim(), requestedPos);
             persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            if (!getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString("native_pos_url", validatedPos)
+                .putString("native_pos_origin", getBtcpayUrl(this)).putString("native_pos_store", getStoreId(this)).commit()) throw new IllegalStateException();
             OneTimeDisplayLoginHandoff.clear();
             startActivity(new Intent(this, MainActivity.class));
             finish();
         } catch (Exception e) {
-            status.setText("Enter a valid HTTPS BTCPay server URL and Store ID.");
+            status.setText("Enter a valid HTTPS server and Store ID. Optional POS URL must be on that server: /apps/APP_ID/pos.");
             status.setVisibility(View.VISIBLE);
         }
     }
@@ -315,6 +321,14 @@ public class SettingsActivity extends Activity {
 
     static String getStoreId(Context c) {
         return c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_STORE_ID, "");
+    }
+
+    static String getPosUrl(Context c) {
+        SharedPreferences p = c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (!getBtcpayUrl(c).equals(p.getString("native_pos_origin", ""))
+            || !getStoreId(c).equals(p.getString("native_pos_store", ""))) return "";
+        try { return PosUrlPolicy.require(getBtcpayUrl(c), p.getString("native_pos_url", "")); }
+        catch (Exception e) { return ""; }
     }
 
     static String getCheckInDeviceId(Context c) {

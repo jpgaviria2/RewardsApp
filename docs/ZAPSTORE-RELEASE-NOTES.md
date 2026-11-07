@@ -1,9 +1,9 @@
-# Rewards NFC Display 2.17.0
+# Rewards NFC Display 2.18.0
 
-- Adds a separate staff Collect payment flow, without a PIN: enter the final CAD cents total already calculated by Square, confirm, and hand the tablet to the customer.
-- Customer payment screen presents an immutable Lightning invoice QR and accepts compatible Boltcard taps through the authenticated store collection API only. These sales do not earn rewards; the matching server plugin must enforce exclusion.
-- Persists only payment identity and dispatch guards before requests. Interrupted/ambiguous charges reconcile the same operation instead of creating or tapping again; pending and review block new charges.
-- Requires server-authoritative paid/expired/cancelled results and explicit staff finish before rewards check-in resumes. Cancellation is followed by status reconciliation.
-- Retains inline rewards camera, existing check-in, onboarding, settings and BTCPay login. Missing collection routes show upgrade/configuration guidance before amount entry.
+- Prominent Customer rewards and Take payment staff actions on the main screen.
+- Take payment opens the merchant's existing native BTCPay POS in a dedicated in-app WebView with Back to rewards. Configure the optional HTTPS `/apps/APP_ID/pos` URL in Settings, then Save & launch display; no merchant URL is shipped as a default. The URL is bound to the configured server and Store ID.
+- Replaces new custom payment creation. Existing custom PaymentOperationStore operations and history remain recoverable with their original durable identity. Unresolved operations continue to block rewards and native POS until reconciled and explicitly finished.
+- Stops rewards camera/NFC capture and clears stale HCE rewards payloads before POS launch. Native POS does not add Android NFC payment functionality.
+- Preserves native BTCPay Login Code flow and CookieManager sessions, HTTPS same-origin navigation, TLS validation, NFC/rewards capture and scanner recovery. POS denies cross-origin resources, external intents, file/content access and WebView permission requests.
 
-Release candidate metadata only: parent release workflow must review the exact commit and publish `rewards-nfc-display-2.17.0-production.apk` before the prospective Zapstore release source is live. Signing, publishing, physical NFC/camera and staged server payment acceptance are not part of the development build gate.
+No server changes or fund-moving acceptance tests. Physical tablet upgrade, camera/NFC ownership, merchant POS checkout and return-to-rewards acceptance remain device-only checks.

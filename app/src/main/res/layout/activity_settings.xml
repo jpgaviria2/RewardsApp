@@ -46,6 +46,15 @@
             android:textColor="#ffffff"
             android:textColorHint="#8888aa" />
 
+        <EditText
+            android:id="@+id/input_pos_url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Native POS URL (optional): https://server/apps/APP_ID/pos"
+            android:inputType="textUri"
+            android:textColor="#ffffff"
+            android:textColorHint="#8888aa" />
+
         <Button
             android:id="@+id/btn_scan_store_qr"
             android:layout_width="match_parent"

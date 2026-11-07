@@ -29,6 +29,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".NativePosActivity" android:exported="false" android:screenOrientation="portrait" />
+
         <activity android:name=".PaymentActivity" android:exported="false" android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:screenOrientation="portrait" />

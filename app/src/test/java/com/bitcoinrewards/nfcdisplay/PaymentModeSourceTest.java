@@ -11,13 +11,13 @@ public class PaymentModeSourceTest {
     @Test public void separateNativePaymentFlowCannotCallRewardsOrIssuerApis() throws Exception {
         String activity = source("PaymentActivity"); String api = source("PaymentApi");
         assertTrue(activity.contains("BarcodeFormat.QR_CODE"));
-        assertTrue(activity.contains("PaymentContract.amount(digits)"));
+        assertFalse(activity.contains("PaymentContract.amount(digits)"));
         assertFalse(activity.contains("check-in"+"/api"));
         assertFalse(activity.contains("RewardsScanCoordinator"));
         assertFalse(activity.contains("loadUrl("));
         assertFalse(activity.contains("Log.")); assertFalse(api.contains("Log."));
         assertTrue(api.contains("/pos/api"));
-        assertTrue(activity.indexOf("operations.begin(") < activity.indexOf("api.create(operations)"));
+        assertFalse(activity.contains("api.create(operations)"));
         assertTrue(activity.indexOf("operations.markTap()") < activity.indexOf("api.tapAndRead("));
     }
     @Test public void recoveryReconcilesAndDoesNotRecreateOrReplayCard() throws Exception {

@@ -30,9 +30,9 @@ public final class PaymentActivity extends Activity {
     private PaymentApi api;
     private LinearLayout layout;
     private TextView message;
-    private String digits = "";
+
     private PaymentContract.Invoice invoice;
-    private boolean busy, resumed, destroyed, capable;
+    private boolean busy, resumed, destroyed;
     private NfcAdapter adapter;
     private final PaymentTapGate tapGate = new PaymentTapGate();
     private final Runnable poll = () -> { if (resumed && operations.exists() && !busy) reconcile(); };
@@ -49,12 +49,7 @@ public final class PaymentActivity extends Activity {
                 operations.exists() ? operations.store() : SettingsActivity.getStoreId(this));
         } catch (Exception e) { finish(); return; }
         adapter = NfcAdapter.getDefaultAdapter(this);
-        if (state != null) digits = state.getString("digits", "");
-        if (operations.exists()) reconcile(); else probe();
-    }
-    @Override protected void onSaveInstanceState(Bundle out) {
-        out.putString("digits", digits); // Amount entry only; invoice/card data never enters saved state.
-        super.onSaveInstanceState(out);
+        if (operations.exists()) reconcile(); else history();
     }
     private void screen(String text) {
         layout = new LinearLayout(this);
@@ -77,37 +72,9 @@ public final class PaymentActivity extends Activity {
         return button;
     }
     private void probe() {
-        screen("Checking collection availability…");
-        request(() -> api.request("GET", "/capability", null), false, json -> {
-            // The protected capability route, not display-page success, authorizes collection.
-            capable = PaymentContract.capable(json);
-            if (capable) keypad();
-            else { screen("Collection unavailable. Enable CAD Lightning collection in the Bitcoin Rewards plugin."); button("Payment history / late settlement", this::history); button("Return to check-in", this::finish); }
-        });
+        history();
     }
-    private void keypad() {
-        screen("Collect payment\nEnter final CAD total — digits are cents\nSquare tax/discounts already included\n" + PaymentContract.money(digits.isEmpty() ? 0 : Long.parseLong(digits)));
-        for (String row : new String[]{"123", "456", "789", "0"}) {
-            LinearLayout keys = new LinearLayout(this);
-            layout.addView(keys);
-            for (char key : row.toCharArray()) {
-                Button b = new Button(this);
-                b.setText(String.valueOf(key));
-                b.setOnClickListener(v -> { if (digits.length() < 8) { digits += key; keypad(); } });
-                keys.addView(b, new LinearLayout.LayoutParams(0, dp(64), 1));
-            }
-        }
-        button("Delete", () -> { if (!digits.isEmpty()) digits = digits.substring(0, digits.length()-1); keypad(); });
-        button("Confirm amount", () -> {
-            final long amount;
-            try { amount = PaymentContract.amount(digits); } catch (Exception e) { message.setText("Enter a positive final CAD amount in cents."); return; }
-            new AlertDialog.Builder(this).setTitle("Collect " + PaymentContract.money(amount) + "?")
-                .setMessage("No rewards are earned for this sale. Hand the tablet to the customer after confirming.")
-                .setNegativeButton("Edit", null).setPositiveButton("Create invoice", (d, w) -> create(amount)).show();
-        });
-        button("Payment history / late settlement", this::history);
-        button("Return to check-in", this::finish);
-    }
+
     private void history() {
         try {
             org.json.JSONArray items = operations.history();
@@ -123,21 +90,10 @@ public final class PaymentActivity extends Activity {
                     }
                 });
             }
-            button("Back to collection availability", this::probe);
+            button("Back to rewards", this::finish);
         } catch (Exception e) { screen("Payment history unavailable. Ask staff to reconcile in BTCPay; do not replace an uncertain charge."); }
     }
-    private void create(long amount) {
-        if (!capable || busy || operations.exists()) return;
-        if (!operations.begin(api.origin, api.store, amount, checkIns.matching(api.origin, api.store))) { screen("Cannot save payment identity. No request sent."); return; }
-        screen("Creating payment… Do not charge again.");
-        request(() -> {
-            try { return api.create(operations); }
-            catch (PaymentApi.Failure failure) {
-                if (failure.staleCheckIn) failure.captureReleased = checkIns.release(operations.origin(), operations.store(), operations.expectedCheckInId());
-                throw failure;
-            }
-        }, true, null);
-    }
+
     private void reconcile() {
         if (busy || !operations.exists()) return;
         if (invoice == null) screen("Recovering payment status… Do not charge again.");

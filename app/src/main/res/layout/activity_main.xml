@@ -11,11 +11,21 @@
         android:background="@color/rewards_green">
 
         <Button
+            android:id="@+id/btn_customer_rewards"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center"
+            android:text="Customer rewards"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="@color/rewards_green" />
+
+        <Button
             android:id="@+id/btn_collect_payment"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginEnd="64dp"
-            android:text="Collect payment"
+            android:text="Take payment"
             android:visibility="gone" />
 
         <LinearLayout

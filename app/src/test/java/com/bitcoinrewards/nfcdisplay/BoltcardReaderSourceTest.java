@@ -35,7 +35,8 @@ public class BoltcardReaderSourceTest {
         assertTrue(main.contains("message.toByteArray().length > BoltcardPayloadParser.MAX_NDEF_BYTES"));
         assertTrue(main.contains("records.length != 1"));
         assertTrue(main.contains("BoltcardPayloadParser.extractUri("));
-        assertFalse(main.contains("NdefHostCardEmulationService"));
+        assertFalse(main.contains("NdefHostCardEmulationService.setPayload"));
+        assertTrue(main.contains("NdefHostCardEmulationService.clearPayload()"));
         assertFalse(main.contains("transceive("));
     }
 

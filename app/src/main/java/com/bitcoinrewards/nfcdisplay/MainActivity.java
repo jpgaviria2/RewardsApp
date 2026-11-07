@@ -77,7 +77,8 @@ public class MainActivity extends Activity {
         captureEpoch++;
         collectionLaunching = true;
         updateInlineScannerState();
-        startActivity(new Intent(this, PaymentActivity.class));
+        com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService.clearPayload();
+        startActivity(new Intent(this, new PaymentOperationStore(this).exists() ? PaymentActivity.class : NativePosActivity.class));
     }
 
     private WebView webView;
@@ -200,9 +201,14 @@ public class MainActivity extends Activity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
+        findViewById(R.id.btn_customer_rewards).setOnClickListener(v -> {
+            if (collectionBlocked()) { openCollection(); return; }
+            if (!loginExchange && !inlineSubmissionInFlight && !captureConfirmationVisible && webView != null)
+                webView.loadUrl(trustedDisplayUrl);
+        });
         collectPaymentButton = findViewById(R.id.btn_collect_payment);
         collectPaymentButton.setOnClickListener(v -> {
-            if (activityResumed && scannerPageEligible && checkInCapabilityVerified && collectionWaitingPage) openCollection();
+            if (activityResumed && !loginExchange && !pendingDisplayConfigurationCommit) openCollection();
         });
         webView = findViewById(R.id.webview);
         loadingText = findViewById(R.id.loading_text);
@@ -469,8 +475,8 @@ public class MainActivity extends Activity {
         updateNfcReaderState();
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         if (collectPaymentButton != null) {
-            int visibility = !collectionBlocked() && activityResumed && scannerPageEligible && checkInCapabilityVerified
-                && collectionWaitingPage && !inlineSubmissionInFlight && !captureConfirmationVisible ? View.VISIBLE : View.GONE;
+            int visibility = activityResumed && !collectionLaunching && !loginExchange && !pendingDisplayConfigurationCommit
+                && !inlineSubmissionInFlight && !captureConfirmationVisible ? View.VISIBLE : View.GONE;
             if (collectPaymentButton.getVisibility() != visibility) {
                 collectPaymentButton.setVisibility(visibility);
                 View split = findViewById(R.id.main_split_layout);
