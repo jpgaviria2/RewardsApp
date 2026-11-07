@@ -270,6 +270,7 @@ public class SettingsActivity extends Activity {
             boolean sameProfile = origin.equals(getBtcpayUrl(this)) && storeId.equals(getStoreId(this));
             if (value.isEmpty() && (!sameProfile || !scannerConfigurationUsable(this))) throw new IllegalArgumentException();
             SecureTokenStore secure = new SecureTokenStore(this);
+            // OS support preflight only; actual keystore writes can still fail closed below.
             if (!secure.available()) throw new IllegalStateException();
             persistDisplayConfiguration(origin, storeId);
             CredentialUpdateState update = new CredentialUpdateState(new PreferenceMetadata(this), new SecureStorage(secure));
@@ -278,7 +279,7 @@ public class SettingsActivity extends Activity {
             status.setText("Scoped rewards scanner provisioning saved. The display login session remains in WebView cookies.");
             status.setVisibility(View.VISIBLE);
         } catch (Exception e) {
-            status.setText("Scanner provisioning requires the current display server/store, a device ID, and a scoped token.");
+            status.setText("Scanner provisioning failed. Check server/store, device ID, scoped token and device keystore. Display settings may already be saved; scanner remains disabled if secure storage failed.");
             status.setVisibility(View.VISIBLE);
         }
     }
@@ -307,7 +308,8 @@ public class SettingsActivity extends Activity {
         String oldStore = p.getString(KEY_STORE_ID, "");
         SharedPreferences.Editor editor = p.edit().putString(KEY_BTCPAY_URL, origin).putString(KEY_STORE_ID, storeId);
         if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
-            editor.remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
+            editor.remove("native_pos_url").remove("native_pos_origin").remove("native_pos_store")
+                .remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
                 .putBoolean(KEY_ONBOARDED, false).putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false);
         }
         if (!editor.commit()) throw new IllegalStateException();

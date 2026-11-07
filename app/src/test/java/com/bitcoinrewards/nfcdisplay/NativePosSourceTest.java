@@ -16,6 +16,8 @@ public class NativePosSourceTest {
         String commit = settings.substring(settings.indexOf("private String persistDisplayConfiguration"), settings.indexOf("static String commitDisplayConfiguration"));
         assertTrue(commit.contains("pos.setText(\"\")"));
         assertTrue(commit.indexOf("if (!origin.equals(oldOrigin)") < commit.indexOf("pos.setText(\"\")"));
+        assertTrue(settings.contains("editor.remove(\"native_pos_url\").remove(\"native_pos_origin\").remove(\"native_pos_store\")"));
+        assertTrue(settings.contains("Display settings may already be saved"));
     }
     @Test public void recreationShowsWarningAndRequiresExplicitReopenWithoutRestoringSecrets() throws Exception {
         String pos = source("NativePosActivity");
