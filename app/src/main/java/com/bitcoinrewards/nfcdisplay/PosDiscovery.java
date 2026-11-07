@@ -23,21 +23,41 @@ final class PosDiscovery {
         if (html == null || html.length() > MAX_BYTES) throw new IllegalArgumentException();
         // Never consider text inside scripts, styles, templates or HTML comments as app evidence.
         String clean = html.replaceAll("(?is)<!--.*?-->|<(script|style|template)\\b[^>]*>.*?</\\1\\s*>", "");
-        Matcher rows = matches("<tr\\b[^>]*>(.*?)</tr\\s*>", clean);
+        // Prove completeness of the entire known list container before cardinality can authorize
+        // automatic launch. Finding only complete rows would silently lose a truncated second app.
+        Matcher tableTags = matches("</?table\\b[^>]*>", clean);
+        int tableTagCount = 0;
+        while (tableTags.find()) tableTagCount++;
+        if (tableTagCount == 0 && clean.contains("There are no apps yet.")
+            && !matches("<tr\\b|<td\\b|\\bid\\s*=\\s*[\"']App-", clean).find()) return Collections.emptyList();
+        if (tableTagCount != 2) throw new IllegalArgumentException();
+        Matcher table = matches("<table\\b[^>]*>(.*?)</table\\s*>", clean);
+        if (!table.find()) throw new IllegalArgumentException();
+        String outside = clean.substring(0, table.start()) + clean.substring(table.end());
+        if (matches("<tr\\b|<td\\b|\\bid\\s*=\\s*[\"']App-", outside).find()) throw new IllegalArgumentException();
+        Matcher body = matches("^\\s*<thead\\b[^>]*>(.*?)</thead\\s*>\\s*<tbody\\b[^>]*>(.*?)</tbody\\s*>\\s*$", table.group(1));
+        if (!body.matches() || matches("<td\\b|<thead\\b|<tbody\\b|\\bid\\s*=\\s*[\"']App-", body.group(1)).find()) throw new IllegalArgumentException();
+        String bodyHtml = body.group(2);
+        Matcher rows = matches("<tr\\b[^>]*>(.*?)</tr\\s*>", bodyHtml);
         List<App> apps = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         int count = 0;
+        int consumed = 0;
         while (rows.find()) {
+            if (!bodyHtml.substring(consumed, rows.start()).trim().isEmpty()) throw new IllegalArgumentException();
+            consumed = rows.end();
             String row = rows.group(1);
-            if (!matches("\\bid\\s*=\\s*[\"']App-", row).find()) {
-                if (matches("<td\\b", row).find()) throw new IllegalArgumentException();
-                continue;
-            }
+            if (!matches("\\bid\\s*=\\s*[\"']App-", row).find()) throw new IllegalArgumentException();
             if (++count > MAX_APPS) throw new IllegalArgumentException();
             Matcher cells = matches("<td\\b[^>]*>(.*?)</td\\s*>", row);
             List<String> td = new ArrayList<>();
-            while (cells.find()) td.add(cells.group(1));
-            if (td.size() != 3) throw new IllegalArgumentException();
+            int cellEnd = 0;
+            while (cells.find()) {
+                if (!row.substring(cellEnd, cells.start()).trim().isEmpty()) throw new IllegalArgumentException();
+                td.add(cells.group(1));
+                cellEnd = cells.end();
+            }
+            if (td.size() != 3 || !row.substring(cellEnd).trim().isEmpty()) throw new IllegalArgumentException();
             Matcher link = matches("^\\s*<a\\b([^>]*)>([^<]*)</a\\s*>\\s*$", td.get(0));
             if (!link.matches()) throw new IllegalArgumentException();
             Map<String,String> attrs = attributes(link.group(1));
@@ -67,8 +87,7 @@ final class PosDiscovery {
                 apps.add(new App(id, name, PosUrlPolicy.require(origin, ApiOrigin.requireConfigured(origin) + "/apps/" + id + "/pos")));
             }
         }
-        // Unknown/translated markup never implies an authoritative single-app result.
-        if (count == 0 && !clean.contains("There are no apps yet.")) throw new IllegalArgumentException();
+        if (!bodyHtml.substring(consumed).trim().isEmpty() || count == 0) throw new IllegalArgumentException();
         return Collections.unmodifiableList(apps);
     }
     private static Map<String,String> attributes(String raw) {

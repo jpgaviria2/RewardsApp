@@ -11,7 +11,7 @@ public class PosDiscoveryClientTest {
         int status = 200, reads;
         boolean disconnected;
         String type = "text/html; charset=utf-8";
-        byte[] body = PosDiscoveryTest.row("Key1", "Counter", "Keypad", "Store1").getBytes(StandardCharsets.UTF_8);
+        byte[] body = PosDiscoveryTest.page(PosDiscoveryTest.row("Key1", "Counter", "Keypad", "Store1")).getBytes(StandardCharsets.UTF_8);
         int declared = -1;
         Connection(URL url) { super(url); }
         @Override public void disconnect() { disconnected = true; }
@@ -62,11 +62,11 @@ public class PosDiscoveryClientTest {
         }
     }
     @Test public void totalDeadlineDisconnectsEvenWhileWaitingForHeaders() throws Exception {
-        java.util.concurrent.CountDownLatch disconnected = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         Connection stalled = new Connection(new URL(PosDiscoveryTest.ORIGIN)) {
-            @Override public void disconnect() { super.disconnect(); disconnected.countDown(); }
+            @Override public void disconnect() { super.disconnect(); latch.countDown(); }
             @Override public int getResponseCode() throws IOException {
-                try { assertTrue(disconnected.await(2, java.util.concurrent.TimeUnit.SECONDS)); }
+                try { assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)); }
                 catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                 throw new InterruptedIOException();
             }

@@ -162,8 +162,12 @@ public final class NativePosActivity extends Activity {
             if (resumed) gate.resume();
         } catch (Exception e) {
             TextView guidance = new TextView(this);
-            guidance.setText("Configure this BTCPay server and Store ID in Settings first. No POS URL is required.");
+            guidance.setText("Configure this BTCPay server and Store ID in Settings first. Discovery needs the native alphanumeric Store ID (up to 128 characters); no POS URL is required.");
             root.addView(guidance);
+            Button settings = new Button(this);
+            settings.setText("Settings / BTCPay login");
+            settings.setOnClickListener(v -> { startActivity(new Intent(this, SettingsActivity.class)); finish(); });
+            root.addView(settings);
             return;
         }
         discoveryPanel = new LinearLayout(this);
@@ -215,6 +219,7 @@ public final class NativePosActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
+        if (isFinishing()) return;
         resumed = true;
         if (gate != null) gate.resume();
         com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService.clearPayload();
