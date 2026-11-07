@@ -259,15 +259,19 @@ public class SettingsActivity extends Activity {
 
     private void saveScannerProvisioning() {
         try {
-            String origin = persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            String origin = ApiOrigin.requireConfigured(url.getText().toString().trim()).toString();
             String storeId = store.getText().toString().trim();
+            PendingOperation.validateText(storeId, 256);
+            if (storeId.isEmpty()) throw new IllegalArgumentException();
             String deviceId = device.getText().toString().trim();
             String value = token.getText().toString();
             PendingOperation.validateText(deviceId, 256);
             if (deviceId.isEmpty()) throw new IllegalArgumentException();
-            if (value.isEmpty() && !scannerConfigurationUsable(this)) throw new IllegalArgumentException();
+            boolean sameProfile = origin.equals(getBtcpayUrl(this)) && storeId.equals(getStoreId(this));
+            if (value.isEmpty() && (!sameProfile || !scannerConfigurationUsable(this))) throw new IllegalArgumentException();
             SecureTokenStore secure = new SecureTokenStore(this);
             if (!secure.available()) throw new IllegalStateException();
+            persistDisplayConfiguration(origin, storeId);
             CredentialUpdateState update = new CredentialUpdateState(new PreferenceMetadata(this), new SecureStorage(secure));
             if (!update.update(origin, storeId, deviceId, value)) throw new IllegalStateException();
             token.setText("");
@@ -286,6 +290,7 @@ public class SettingsActivity extends Activity {
         String origin = commitDisplayConfiguration(this, requestedOrigin, requestedStore);
         String storeId = requestedStore == null ? "" : requestedStore.trim();
         if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
+            pos.setText("");
             device.setText("");
             token.setText("");
         }

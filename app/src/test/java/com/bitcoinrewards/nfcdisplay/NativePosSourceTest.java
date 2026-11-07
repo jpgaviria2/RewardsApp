@@ -7,6 +7,16 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.Assert.*;
 
 public class NativePosSourceTest {
+    @Test public void alternateSettingsSaveInvalidatesInheritedInputAndValidatesBeforeCommit() throws Exception {
+        String settings = source("SettingsActivity");
+        String scanner = settings.substring(settings.indexOf("private void saveScannerProvisioning"), settings.indexOf("private String persistDisplayConfiguration"));
+        assertTrue(scanner.indexOf("if (deviceId.isEmpty())") < scanner.indexOf("persistDisplayConfiguration(origin, storeId)"));
+        assertTrue(scanner.indexOf("if (!secure.available())") < scanner.indexOf("persistDisplayConfiguration(origin, storeId)"));
+        assertTrue(scanner.contains("!sameProfile || !scannerConfigurationUsable(this)"));
+        String commit = settings.substring(settings.indexOf("private String persistDisplayConfiguration"), settings.indexOf("static String commitDisplayConfiguration"));
+        assertTrue(commit.contains("pos.setText(\"\")"));
+        assertTrue(commit.indexOf("if (!origin.equals(oldOrigin)") < commit.indexOf("pos.setText(\"\")"));
+    }
     @Test public void recreationShowsWarningAndRequiresExplicitReopenWithoutRestoringSecrets() throws Exception {
         String pos = source("NativePosActivity");
         String gate = pos.substring(pos.indexOf("if (state != null)"), pos.indexOf("private void openPos"));
