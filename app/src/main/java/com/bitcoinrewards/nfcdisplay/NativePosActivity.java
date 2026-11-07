@@ -36,6 +36,25 @@ public final class NativePosActivity extends Activity {
         history.setOnClickListener(v -> recovery());
         root.addView(history);
         setContentView(root);
+        if (state != null) {
+            TextView warning = new TextView(this);
+            warning.setText("Checkout interrupted. A previous BTCPay invoice may still be payable. Check its status in BTCPay before reopening POS; do not charge again.");
+            root.addView(warning);
+            Button reopen = new Button(this);
+            reopen.setText("I checked BTCPay — reopen POS");
+            reopen.setOnClickListener(v -> {
+                root.removeView(warning);
+                root.removeView(reopen);
+                openPos(root);
+            });
+            root.addView(reopen);
+            return;
+        }
+        openPos(root);
+    }
+    @SuppressLint("SetJavaScriptEnabled")
+    private void openPos(LinearLayout root) {
+        if (new PaymentOperationStore(this).exists()) { recovery(); return; }
         try {
             entry = SettingsActivity.getPosUrl(this);
             policy = new WebOriginPolicy(SettingsActivity.getBtcpayUrl(this));

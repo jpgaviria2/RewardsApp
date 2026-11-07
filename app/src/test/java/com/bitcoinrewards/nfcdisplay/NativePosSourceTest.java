@@ -7,6 +7,16 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.Assert.*;
 
 public class NativePosSourceTest {
+    @Test public void recreationShowsWarningAndRequiresExplicitReopenWithoutRestoringSecrets() throws Exception {
+        String pos = source("NativePosActivity");
+        String gate = pos.substring(pos.indexOf("if (state != null)"), pos.indexOf("private void openPos"));
+        assertTrue(gate.contains("Checkout interrupted."));
+        assertTrue(gate.contains("A previous BTCPay invoice may still be payable"));
+        assertTrue(gate.contains("reopen.setOnClickListener"));
+        assertTrue(gate.contains("return;"));
+        assertFalse(gate.contains("web.loadUrl"));
+        assertFalse(pos.contains("putString("));
+    }
     private String source(String name) throws Exception {
         return new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/" + name + ".java")), StandardCharsets.UTF_8);
     }

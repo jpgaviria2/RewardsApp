@@ -4,6 +4,15 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class PosUrlPolicyTest {
+    @Test public void changingProfileCannotInheritPreviousPos() {
+        String origin = "https://merchant.example";
+        String old = origin + "/apps/AppA/pos", replacement = origin + "/apps/AppB/pos";
+        assertEquals("", PosUrlPolicy.forProfileSave(origin, "A", old, origin, "B", old));
+        assertEquals("", PosUrlPolicy.forProfileSave(origin, "A", old, "https://new.example", "A", old));
+        assertEquals(replacement, PosUrlPolicy.forProfileSave(origin, "A", old, origin, "B", replacement));
+        assertEquals(old, PosUrlPolicy.forProfileSave(origin, "A", old, origin, "A", old));
+        assertEquals(old, PosUrlPolicy.forProfileSave(origin, "B", "", origin, "B", old));
+    }
     @Test public void canonicalSameServerPosOnly() {
         assertEquals("https://merchant.example/apps/Ab123/pos", PosUrlPolicy.require("https://merchant.example", "https://merchant.example/apps/Ab123/pos"));
         assertEquals("https://merchant.example/apps/Ab123/pos", PosUrlPolicy.require("https://merchant.example", "https://MERCHANT.example:443/apps/Ab123/pos"));

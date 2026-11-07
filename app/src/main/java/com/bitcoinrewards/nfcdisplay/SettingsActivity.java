@@ -242,7 +242,9 @@ public class SettingsActivity extends Activity {
     private void saveDisplayAndLaunch() {
         try {
             String requestedPos = pos.getText().toString().trim();
-            String validatedPos = requestedPos.isEmpty() ? "" : PosUrlPolicy.require(url.getText().toString().trim(), requestedPos);
+            String requestedOrigin = ApiOrigin.requireConfigured(url.getText().toString().trim()).toString();
+            String validatedPos = PosUrlPolicy.forProfileSave(getBtcpayUrl(this), getStoreId(this), getPosUrl(this),
+                requestedOrigin, store.getText().toString().trim(), requestedPos);
             persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
             if (!getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString("native_pos_url", validatedPos)
                 .putString("native_pos_origin", getBtcpayUrl(this)).putString("native_pos_store", getStoreId(this)).commit()) throw new IllegalStateException();
