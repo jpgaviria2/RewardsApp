@@ -74,6 +74,6 @@ public class NativePosSourceTest {
         assertTrue(settings.contains("getBtcpayUrl(c).equals(p.getString(\"native_pos_origin\""));
         assertTrue(settings.contains("getStoreId(c).equals(p.getString(\"native_pos_store\""));
         assertTrue(settings.contains("PosUrlPolicy.require(getBtcpayUrl(c)"));
-        assertFalse(settings.contains("pay.anmore.space"));
+        assertTrue(settings.contains("getString(\"native_pos_url\", \"\")"));
     }
 }

@@ -80,11 +80,17 @@ final class PosDiscovery {
             if (!(storePath.equals(storeLink) || (ApiOrigin.requireConfigured(origin) + storePath).equals(storeLink)))
                 throw new IllegalArgumentException();
             if (owner.find()) throw new IllegalArgumentException();
-            String style = text(td.get(1));
-            if (pos && style.equals("Point of Sale - Keypad")) {
-                String name = text(link.group(2));
-                if (name.isEmpty()) name = "Point of Sale";
-                apps.add(new App(id, name, PosUrlPolicy.require(origin, ApiOrigin.requireConfigured(origin) + "/apps/" + id + "/pos")));
+            if (pos) {
+                Matcher style = matches("^\\s*Point of Sale\\s*<span>\\s*-\\s*</span>\\s*<span>\\s*(Keypad|Product list|Product list with cart|Print display)\\s*</span>\\s*$", td.get(1));
+                if (!style.matches()) throw new IllegalArgumentException();
+                if (style.group(1).equalsIgnoreCase("Keypad")) {
+                    String name = text(link.group(2));
+                    if (name.isEmpty()) name = "Point of Sale";
+                    apps.add(new App(id, name, PosUrlPolicy.require(origin, ApiOrigin.requireConfigured(origin) + "/apps/" + id + "/pos")));
+                }
+            } else if (!path.equals("/apps/" + id + "/settings/crowdfund") || !td.get(1).trim().equals("Crowdfund")) {
+                // Unknown plugin routes/types may not be silently discarded to establish cardinality.
+                throw new IllegalArgumentException();
             }
         }
         if (!bodyHtml.substring(consumed).trim().isEmpty() || count == 0) throw new IllegalArgumentException();

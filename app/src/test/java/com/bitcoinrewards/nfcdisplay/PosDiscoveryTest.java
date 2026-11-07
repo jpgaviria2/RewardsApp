@@ -37,7 +37,9 @@ public class PosDiscoveryTest {
     @Test public void noKeypadDoesNotFallBackToCartOrArbitraryApp() {
         assertTrue(parse(row("Cart1", "Catalog", "Product list with cart", "Store1")).isEmpty());
         assertTrue(PosDiscovery.parse(ORIGIN, "Store1", "<p>There are no apps yet.</p>").isEmpty());
-        assertTrue(parse(row("Crowd1", "Campaign", "Keypad", "Store1").replace("/settings/pos", "/settings/crowdfund")).isEmpty());
+        assertTrue(parse(row("Crowd1", "Campaign", "Keypad", "Store1").replace("/settings/pos", "/settings/crowdfund").replace("Point of Sale <span>-</span><span>Keypad</span>", "Crowdfund")).isEmpty());
+        for (String known : new String[]{"Product list", "Product list with cart", "Print display"})
+            assertEquals(1, parse(row("Key1", "Counter", "Keypad", "Store1") + row("Other", "Other", known, "Store1")).size());
     }
     @Test public void crossStoreForeignOriginQueriesAndAmbiguityFailClosed() {
         reject(row("Key1", "Counter", "Keypad", "Other"));
@@ -55,6 +57,17 @@ public class PosDiscoveryTest {
         reject("<!--" + row("Key1", "Fake", "Keypad", "Store1") + "-->");
         reject("<template>" + row("Key1", "Fake", "Keypad", "Store1") + "</template>");
         reject(row("Key1", "Counter", "Keypad", "Store1").replace("</a></td>", "</a><span>archived</span></td>"));
+    }
+    @Test public void unknownOrIncompleteClassificationCannotReduceCardinality() {
+        String first = row("Key1", "Counter", "Keypad", "Store1");
+        String second = row("Key2", "Patio", "Keypad", "Store1");
+        for (String style : new String[]{"", "Unknown", "Light", "Keypad tomorrow", "<span>Keypad"})
+            reject(first + row("Key2", "Patio", style, "Store1"));
+        for (String cell : new String[]{"", "Point of Sale", "Point of Sale - Keypad", "Other <span>-</span><span>Keypad</span>", "Point of Sale <span>-</span><span>Keypad", "Point of Sale <span>-</span>"})
+            reject(first + second.replace("Point of Sale <span>-</span><span>Keypad</span>", cell));
+        reject(first + second.replace("/settings/pos", "/settings/unknown"));
+        reject(first + second.replace("/settings/pos", "/settings/crowdfund"));
+        assertEquals(2, parse(first + row("Key2", "Patio", "keypad", "Store1")).size());
     }
     @Test public void truncatedSecondAppAndIncompleteContainerNeverBecomeSingleSelection() {
         String first = row("Key1", "Counter", "Keypad", "Store1");
