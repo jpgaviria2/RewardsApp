@@ -33,6 +33,13 @@ reviews = [status for page in review_pages for status in page.get("statuses", []
            if status.get("context") == "Independent OpenCode review"]
 if not reviews or max(reviews, key=lambda status: status["id"])["state"] != "success":
     raise SystemExit("Independent OpenCode review must succeed on exact reviewed SHA")
+producer = os.environ.get("INDEPENDENT_REVIEW_PRODUCER_ID", "")
+if not re.fullmatch(r"[1-9][0-9]*", producer):
+    raise SystemExit("Require configured immutable independent review producer ID")
+latest_review = max(reviews, key=lambda status: status["id"])
+creator_id = (latest_review.get("creator") or {}).get("id")
+if type(creator_id) is not int or creator_id != int(producer):
+    raise SystemExit("Independent OpenCode review has an unauthorized producer")
 source = out("git", "show", f"{sha}:app/build.gradle")
 versions = re.findall(r'versionName\s+"([^"\n]+)"', source)
 if versions != [tag[1:]]:

@@ -88,10 +88,15 @@ separate job; source review status reads require `statuses: read`.
 Remaining recommended controls, **not claimed configured**: eligible independent
 human PR/CODEOWNER approvals, required release-environment human reviewers and
 no administrator bypass, immutable `v*` tag protection, allowed-Actions policy
-and fork approval policy. Protect status-posting credentials: the external
-review context is not bound to a GitHub App (`app_id: null`), so an authorized
-status writer could forge it. It is a trusted-operator signal, not cryptographic
-attestation. Organization-level secret availability is not established.
+and fork approval policy. The release gate authenticates the latest review
+status creator against the repository variable `INDEPENDENT_REVIEW_PRODUCER_ID`
+(immutable GitHub user ID `98620768`, verified for the authorized operator),
+in addition to context, exact SHA and success. Missing configuration/creator or
+a newer status from another producer fails closed. Protect the operator's OAuth
+credential and repository-variable administration: a compromised trusted operator
+can still forge its own status. This is an authenticated trusted-operator signal,
+not cryptographic model attestation or a dedicated GitHub App check (`app_id: null`).
+Organization-level secret availability is not established.
 
 ## Gradle artifact integrity and bootstrap trust
 

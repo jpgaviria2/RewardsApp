@@ -14,6 +14,8 @@ permissions:
   contents: read
   actions: read
   statuses: read
+env:
+  INDEPENDENT_REVIEW_PRODUCER_ID: ${{ vars.INDEPENDENT_REVIEW_PRODUCER_ID }}
 concurrency:
   group: reviewed-release
   cancel-in-progress: false

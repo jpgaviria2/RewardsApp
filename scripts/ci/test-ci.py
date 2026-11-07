@@ -151,7 +151,8 @@ class Gates(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "unrelated scanner")
         self.assertNotEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
-    def release_fixture(self, conclusion="success", version="1.2.3", review="success", review_sha=None, newer_review=None):
+    def release_fixture(self, conclusion="success", version="1.2.3", review="success", review_sha=None, newer_review=None,
+                        review_creator: int | None =98620768, newer_creator=98620768):
         self.init_git()
         self.git("branch", "-M", "main")
         app = self.root / "app"
@@ -167,14 +168,17 @@ class Gates(unittest.TestCase):
         tools.mkdir()
         runs = {"workflow_runs": [{"head_sha":sha, "head_branch":"main", "event":"push", "conclusion":conclusion, "id":2}]}
         gh = tools / "gh"
-        statuses = [] if review is None else [{"context": "Independent OpenCode review", "state": review, "id": 1}]
+        statuses = [] if review is None else [{"context": "Independent OpenCode review", "state": review, "id": 1,
+                                              "creator": {"id": review_creator}}]
         if newer_review is not None:
-            statuses.append({"context": "Independent OpenCode review", "state": newer_review, "id": 2})
+            statuses.append({"context": "Independent OpenCode review", "state": newer_review, "id": 2,
+                             "creator": {"id": newer_creator}})
         pages = [{"sha": review_sha or sha, "statuses": statuses}]
         gh.write_text("#!/usr/bin/env python3\nimport sys\nprint(" + repr(json.dumps(pages)) +
                       " if '--slurp' in sys.argv else " + repr(json.dumps(runs)) + ")\n")
         gh.chmod(0o755)
-        env = dict(os.environ, GITHUB_REF="refs/heads/main", GITHUB_REPOSITORY="fixture/fixture", PATH=str(tools) + os.pathsep + os.environ["PATH"])
+        env = dict(os.environ, GITHUB_REF="refs/heads/main", GITHUB_REPOSITORY="fixture/fixture",
+                   INDEPENDENT_REVIEW_PRODUCER_ID="98620768", PATH=str(tools) + os.pathsep + os.environ["PATH"])
         return sha, env
     def test_release_valid_fixture(self):
         sha, env = self.release_fixture()
@@ -185,6 +189,21 @@ class Gates(unittest.TestCase):
         p = run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("Independent OpenCode review must succeed", p.stderr)
+    def test_release_unauthorized_review_producer(self):
+        sha, env = self.release_fixture(review_creator=123)
+        p = run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("unauthorized producer", p.stderr)
+    def test_release_review_missing_creator(self):
+        sha, env = self.release_fixture(review_creator=None)
+        self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)
+    def test_release_newer_forged_success_rejects_even_after_trusted_success(self):
+        sha, env = self.release_fixture(newer_review="success", newer_creator=123)
+        self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)
+    def test_release_review_producer_configuration_required(self):
+        sha, env = self.release_fixture()
+        env.pop("INDEPENDENT_REVIEW_PRODUCER_ID")
+        self.assertNotEqual(run("release-gate.py", sha, "v1.2.3", cwd=self.root, env=env).returncode, 0)
     def test_release_failed_or_pending_independent_review(self):
         for state in ("failure", "pending", "error"):
             with self.subTest(state=state):
