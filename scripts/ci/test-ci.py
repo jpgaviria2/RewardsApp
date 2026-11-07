@@ -22,6 +22,11 @@ class Gates(unittest.TestCase):
             setup = text.split("uses: android-actions/setup-android@", 1)[1].split("      - ", 1)[0]
             self.assertIn("packages: platform-tools", setup, name)
             self.assertNotRegex(setup, r"packages:.*\btools\s+platform-tools", name)
+    def test_android_gate_includes_both_lints_and_unit_variants_without_release_signing(self):
+        text = (SCRIPTS / "android-check.sh").read_text()
+        for task in ("clean", "lintDebug", "lintRelease", "testDebugUnitTest", "testReleaseUnitTest", "assembleDebug"):
+            self.assertIn(task, text)
+        self.assertNotIn("assembleRelease", text)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)
@@ -94,6 +99,21 @@ class Gates(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "fixture change")
         self.assertEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
+    def test_scope_accepts_exact_checkin_transfer_files_not_unrelated_scanner_changes(self):
+        base = self.init_git()
+        for name in ("app/src/main/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStore.java",
+                     "app/src/test/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStoreTest.java",
+                     "app/src/test/java/com/bitcoinrewards/nfcdisplay/ScannerEntrySourceTest.java"):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+        self.git("add", ".")
+        self.git("commit", "-qm", "transfer fixtures")
+        self.assertEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
+        (self.root / "app/src/main/java/com/bitcoinrewards/nfcdisplay/RewardsProfileScanActivity.java").write_text("unrelated")
+        self.git("add", ".")
+        self.git("commit", "-qm", "unrelated scanner")
+        self.assertNotEqual(run("feature-scope.py", base, "HEAD", cwd=self.root).returncode, 0)
     def release_fixture(self, conclusion="success", version="1.2.3"):
         self.init_git()
         self.git("branch", "-M", "main")

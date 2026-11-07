@@ -22,6 +22,7 @@ public class PaymentApiTest {
         @Override public boolean usingProxy() { return false; }
         @Override public int getResponseCode() { return code; }
         @Override public InputStream getInputStream() { return new ByteArrayInputStream(response.getBytes(StandardCharsets.UTF_8)); }
+        @Override public InputStream getErrorStream() { return new ByteArrayInputStream(response.getBytes(StandardCharsets.UTF_8)); }
         @Override public OutputStream getOutputStream() { return sent; }
     }
     PaymentApi api(Connection connection) {
@@ -89,6 +90,57 @@ public class PaymentApiTest {
         PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> { fail("No transport for unsafe card"); return null; }, url -> "session=test-only");
         for (String card : new String[]{"https://issuer.example/tap", "lnurlw://issuer.example/?k1=secret", "lnurlw://issuer.example/tap?p=x&c=y"}) {
             try { api.tapAndRead(ID, card); fail(card); } catch (IllegalArgumentException expected) { }
+        }
+    }
+    @Test public void createUsesDurableScopedCheckInOnlyAndLegacyOmitsIt() throws Exception {
+        for (String expected : new String[]{ID, null}) {
+            PaymentOperationStoreTest.Memory memory = new PaymentOperationStoreTest.Memory();
+            assertTrue(memory.open().begin(ORIGIN, "Store1", 100, expected));
+            Connection c = new Connection(); api(c).create(memory.open());
+            JSONObject body = new JSONObject(c.sent.toString("UTF-8"));
+            assertEquals(memory.open().id(), body.getString("operationId"));
+            assertEquals(expected != null, body.has("expectedCheckInId"));
+            if (expected != null) assertEquals(expected, body.getString("expectedCheckInId"));
+            PaymentApi other = new PaymentApi("https://other.example", "Store1", url -> { fail(); return c; }, url -> "session=test-only");
+            try { other.create(memory.open()); fail(); } catch (IllegalArgumentException correct) { }
+            other = new PaymentApi(ORIGIN, "Store2", url -> { fail(); return c; }, url -> "session=test-only");
+            try { other.create(memory.open()); fail(); } catch (IllegalArgumentException correct) { }
+        }
+    }
+    @Test public void reconcileAlwaysPostsThenReadsEvenWhenAckIsLostOrDenied() throws Exception {
+        for (int code : new int[]{200, 401, 403, 409, 500}) {
+            Connection post = new Connection(); post.code = code; post.response = "{\"status\":\"cancelled\"}";
+            Connection read = new Connection(); read.response = "{\"status\":\"review\"}";
+            java.util.List<String> paths = new java.util.ArrayList<>();
+            PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> { paths.add(url); return paths.size() == 1 ? post : read; }, url -> "session=test-only");
+            assertEquals("review", api.reconcileAndRead(ID, "Investigate interrupted collection").getString("status"));
+            assertEquals("Investigate interrupted collection", new JSONObject(post.sent.toString("UTF-8")).getString("reason"));
+            assertEquals(2, paths.size()); assertTrue(paths.get(0).endsWith("/"+ID+"/reconcile"));
+            assertTrue(paths.get(1).endsWith("/"+ID)); assertEquals("POST", post.getRequestMethod());
+            assertEquals("GET", read.getRequestMethod()); assertFalse(post.getInstanceFollowRedirects());
+        }
+    }
+    @Test public void onlyExactBoundedStaleRejectionReleasesCustomerCapture() throws Exception {
+        for (String response : new String[]{"{\"error\":\"Expected check-in is not the store's unchanged pending capture.\"}",
+                "{\"error\":\"Another POS operation is active\"}", "{", "x".repeat(32769)}) {
+            Connection c = new Connection(); c.code = 400; c.response = response;
+            try { api(c).request("POST", "/invoices", new JSONObject()); fail(); }
+            catch (PaymentApi.Failure failure) {
+                assertEquals(400, failure.code);
+                assertEquals(response.startsWith("{\"error\":\"Expected"), failure.staleCheckIn);
+                if (failure.staleCheckIn) {
+                    failure.captureReleased = true;
+                    assertTrue(failure.guidance().contains("captured reference was released"));
+                    assertTrue(failure.guidance().contains("do not create a replacement"));
+                }
+            }
+            assertTrue(c.closed);
+        }
+    }
+    @Test public void reconciliationRequiresBoundedOperatorReasonBeforeAnyNetwork() throws Exception {
+        PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> { fail(); return null; }, url -> "session=test-only");
+        for (String reason : new String[]{null, "", "   ", "x".repeat(501)}) {
+            try { api.reconcileAndRead(ID, reason); fail(); } catch (IllegalArgumentException correct) { }
         }
     }
     @Test public void oversizedResponsesFailClosedAndDisconnect() throws Exception {

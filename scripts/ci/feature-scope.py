@@ -9,6 +9,9 @@ allowed = {
     "app/src/main/res/layout/activity_main.xml",
     "docs/MERCHANT-COLLECTION-ACCEPTANCE.md", "docs/ZAPSTORE-RELEASE-NOTES.md",
     "zapstore.yaml",
+    "app/src/main/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStore.java",
+    "app/src/test/java/com/bitcoinrewards/nfcdisplay/CollectionCheckInStoreTest.java",
+    "app/src/test/java/com/bitcoinrewards/nfcdisplay/ScannerEntrySourceTest.java",
 }
 for name in ("PaymentActivity", "PaymentApi", "PaymentContract", "PaymentOperationStore", "PaymentTapGate"):
     allowed.add(f"app/src/main/java/com/bitcoinrewards/nfcdisplay/{name}.java")

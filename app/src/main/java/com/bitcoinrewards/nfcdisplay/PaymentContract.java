@@ -51,13 +51,14 @@ final class PaymentContract {
             amountMinor = ((Number) rawAmount).longValue();
             if (!operation.equals(operationId) || !"CAD".equals(json.getString("currency"))
                 || amount != amountMinor || amount <= 0 || amount > MAX_MINOR
-                || (invoiceId == null ? !"review".equals(status) : invoiceId.isEmpty() || invoiceId.length() > 256)
+                || (invoiceId == null ? !("review".equals(status) || "cancelled".equals(status) || "expired".equals(status)) : invoiceId.isEmpty() || invoiceId.length() > 256)
                 || (previousInvoice != null && !previousInvoice.equals(invoiceId))
                 || !(terminal(status) || "pending".equals(status) || "review".equals(status))) {
                 throw new IllegalArgumentException("Invoice identity mismatch");
             }
             bolt11 = json.isNull("bolt11") ? "" : json.getString("bolt11");
-            expiresAt = json.isNull("expiresAt") && "review".equals(status) ? "Unavailable — staff review required" : json.getString("expiresAt");
+            expiresAt = json.isNull("expiresAt") && !("pending".equals(status) || "paid".equals(status))
+                ? ("review".equals(status) ? "Unavailable — staff review required" : "Not payable — server confirmed") : json.getString("expiresAt");
             if (expiresAt.isEmpty() || expiresAt.length() > 64 || bolt11.length() > 8192) throw new IllegalArgumentException();
             if ("pending".equals(status) && !bolt11.matches("(?i)lnbc[0-9a-z]{20,8192}")) throw new IllegalArgumentException();
         }

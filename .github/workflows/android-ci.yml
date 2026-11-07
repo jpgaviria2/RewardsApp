@@ -59,7 +59,7 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
-      - name: Full clean lint, debug/release unit tests and debug APK
+      - name: Full clean debug/release lint, unit tests and debug APK
         run: bash scripts/ci/android-check.sh
       - name: Require nonzero passing tests in both variants
         if: always()

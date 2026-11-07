@@ -15,7 +15,7 @@ Required checks (select their actual check names after the first PR run):
 
 - **Policy and secrets**: temporary feature scope; actionlint syntax/expression
   checks; CI-script regression tests; Gitleaks history scan.
-- **Clean Android gate**: `clean lintDebug testDebugUnitTest
+- **Clean Android gate**: `clean lintDebug lintRelease testDebugUnitTest
   testReleaseUnitTest assembleDebug --no-daemon --no-build-cache --rerun-tasks`.
   XML reports must exist for **both** variants, each with at least one executed,
   non-skipped passing test and no failure/error. Missing tests are failure,

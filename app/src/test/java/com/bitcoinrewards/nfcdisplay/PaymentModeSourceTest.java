@@ -17,7 +17,7 @@ public class PaymentModeSourceTest {
         assertFalse(activity.contains("loadUrl("));
         assertFalse(activity.contains("Log.")); assertFalse(api.contains("Log."));
         assertTrue(api.contains("/pos/api"));
-        assertTrue(activity.indexOf("operations.begin(") < activity.indexOf("api.request(\"POST\", \"/invoices\""));
+        assertTrue(activity.indexOf("operations.begin(") < activity.indexOf("api.create(operations)"));
         assertTrue(activity.indexOf("operations.markTap()") < activity.indexOf("api.tapAndRead("));
     }
     @Test public void recoveryReconcilesAndDoesNotRecreateOrReplayCard() throws Exception {
@@ -38,7 +38,7 @@ public class PaymentModeSourceTest {
         assertTrue(main.contains("if (collectionBlocked() || !activityResumed"));
         assertTrue(main.contains("if (!activityResumed || collectionBlocked() || result == null"));
         assertTrue(main.contains("if (new PaymentOperationStore(this).exists()) { openCollection(); return; }"));
-        assertTrue(main.contains("collectionWaitingPage = explicitWaiting && !checkedIn && !rewardVisible"));
+        assertTrue(main.contains("collectionWaitingPage = (explicitWaiting || checkedIn) && !rewardVisible"));
         assertTrue(main.contains("if (epoch == captureEpoch) submitBoltcardTap(boltcardUrl)"));
     }
     @Test public void preferencesContainNoCardInvoiceOrCookieSecret() throws Exception {

@@ -529,7 +529,7 @@ public class MainActivity extends Activity {
                 boolean explicitWaiting = value != null && value.contains("\\\"state\\\":\\\"waiting\\\"");
                 boolean hasExplicitState = value != null && value.contains("\\\"state\\\":\\\"")
                     && !value.contains("\\\"state\\\":\\\"\\\"");
-                collectionWaitingPage = explicitWaiting && !checkedIn && !rewardVisible;
+                collectionWaitingPage = (explicitWaiting || checkedIn) && !rewardVisible;
                 idleTutorialEligible = explicitWaiting || (!hasExplicitState && !rewardVisible && !checkedIn);
                 if (idleTutorialPanel != null) {
                     idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE : View.GONE);
@@ -834,13 +834,15 @@ public class MainActivity extends Activity {
         @Override protected Boolean doInBackground(Void... ignored) {
             HttpURLConnection connection = null;
             try {
-                String legacyApiUrl = SettingsActivity.getLegacyCheckInUrl(MainActivity.this);
+                String requestOrigin = SettingsActivity.getBtcpayUrl(MainActivity.this);
+                String requestStore = SettingsActivity.getStoreId(MainActivity.this);
+                String legacyApiUrl = SettingsActivity.buildLegacyCheckInUrl(requestOrigin, requestStore);
                 if (legacyApiUrl == null || legacyApiUrl.isEmpty() || isCancelled()) return false;
                 String apiUrl = boltcardUrl == null
                     ? legacyApiUrl
                     : BoltcardCheckInEndpoint.fromLegacyCheckInUrl(legacyApiUrl);
                 String cookie = InlineCheckInAuthentication.cookieForTrustedApi(
-                    SettingsActivity.getBtcpayUrl(MainActivity.this),
+                    requestOrigin,
                     apiUrl,
                     url -> CookieManager.getInstance().getCookie(url));
                 if (cookie == null) {
@@ -866,7 +868,12 @@ public class MainActivity extends Activity {
                 }
                 responseCode = connection.getResponseCode();
                 loginExpired = InlineCheckInAuthentication.isLoginExpired(responseCode);
-                return responseCode >= 200 && responseCode < 300;
+                if (responseCode < 200 || responseCode >= 300) return false;
+                String checkInId = null;
+                try {
+                    if (connection.getContentLength() <= 32768) checkInId = CollectionCheckInStore.successId(connection.getInputStream());
+                } catch (Exception ignoredBody) { /* Legacy success stays compatible; never reuse a previous customer. */ }
+                return new CollectionCheckInStore(MainActivity.this).capture(requestOrigin, requestStore, checkInId);
             } catch (Exception e) {
                 return false;
             } finally {

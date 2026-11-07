@@ -39,6 +39,14 @@ public class PaymentContractTest {
             assertEquals(status, new PaymentContract.Invoice(invoice(status).put("bolt11", JSONObject.NULL), ID, 1234, "invoice-1").status);
         }
     }
+    @Test public void serverReconciliationCanProveNoInvoiceWasCreatedButCannotEraseKnownInvoice() throws Exception {
+        for (String status : new String[]{"cancelled", "expired"}) {
+            JSONObject result = invoice(status).put("invoiceId", JSONObject.NULL).put("bolt11", JSONObject.NULL).put("expiresAt", JSONObject.NULL);
+            assertEquals(status, new PaymentContract.Invoice(result, ID, 1234, null).status);
+            reject(result, "invoice-1");
+        }
+        for (String status : new String[]{"pending", "paid"}) reject(invoice(status).put("invoiceId", JSONObject.NULL), null);
+    }
     @Test public void capabilityRequiresVersionedCadAvailability() throws Exception {
         assertTrue(PaymentContract.capable(new JSONObject("{\"available\":true,\"currency\":\"CAD\",\"version\":1}")));
         for (String value : new String[]{"{}", "{\"available\":false,\"currency\":\"CAD\",\"version\":1}",

@@ -26,6 +26,7 @@ public final class PaymentActivity extends Activity {
     private static final ExecutorService NETWORK = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private PaymentOperationStore operations;
+    private CollectionCheckInStore checkIns;
     private PaymentApi api;
     private LinearLayout layout;
     private TextView message;
@@ -42,6 +43,7 @@ public final class PaymentActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON | WindowManager.LayoutParams.FLAG_SECURE);
         com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService.clearPayload();
         operations = new PaymentOperationStore(this);
+        checkIns = new CollectionCheckInStore(this);
         try {
             api = new PaymentApi(operations.exists() ? operations.origin() : SettingsActivity.getBtcpayUrl(this),
                 operations.exists() ? operations.store() : SettingsActivity.getStoreId(this));
@@ -80,7 +82,7 @@ public final class PaymentActivity extends Activity {
             // The protected capability route, not display-page success, authorizes collection.
             capable = PaymentContract.capable(json);
             if (capable) keypad();
-            else { screen("Collection unavailable. Enable CAD Lightning collection in the Bitcoin Rewards plugin."); button("Return to check-in", this::finish); }
+            else { screen("Collection unavailable. Enable CAD Lightning collection in the Bitcoin Rewards plugin."); button("Payment history / late settlement", this::history); button("Return to check-in", this::finish); }
         });
     }
     private void keypad() {
@@ -103,14 +105,38 @@ public final class PaymentActivity extends Activity {
                 .setMessage("No rewards are earned for this sale. Hand the tablet to the customer after confirming.")
                 .setNegativeButton("Edit", null).setPositiveButton("Create invoice", (d, w) -> create(amount)).show();
         });
+        button("Payment history / late settlement", this::history);
         button("Return to check-in", this::finish);
+    }
+    private void history() {
+        try {
+            org.json.JSONArray items = operations.history();
+            screen("Payment history — recorded statuses, not live settlement. Select a reference to read and reconcile its current server status. No replacement invoice is created.");
+            for (int i = items.length() - 1; i >= 0; i--) {
+                final int index = i;
+                JSONObject item = items.getJSONObject(i);
+                button(item.getString("status") + " — " + PaymentContract.money(item.getLong("amount")) + "\n" + item.getString("operation"), () -> {
+                    if (!busy && operations.recoverHistory(index)) {
+                        api = new PaymentApi(operations.origin(), operations.store());
+                        invoice = null;
+                        reconcile();
+                    }
+                });
+            }
+            button("Back to collection availability", this::probe);
+        } catch (Exception e) { screen("Payment history unavailable. Ask staff to reconcile in BTCPay; do not replace an uncertain charge."); }
     }
     private void create(long amount) {
         if (!capable || busy || operations.exists()) return;
-        if (!operations.begin(api.origin, SettingsActivity.getStoreId(this), amount)) { screen("Cannot save payment identity. No request sent."); return; }
+        if (!operations.begin(api.origin, api.store, amount, checkIns.matching(api.origin, api.store))) { screen("Cannot save payment identity. No request sent."); return; }
         screen("Creating payment… Do not charge again.");
-        request(() -> api.request("POST", "/invoices", new JSONObject()
-            .put("operationId", operations.id()).put("amountMinor", amount)), true, null);
+        request(() -> {
+            try { return api.create(operations); }
+            catch (PaymentApi.Failure failure) {
+                if (failure.staleCheckIn) failure.captureReleased = checkIns.release(operations.origin(), operations.store(), operations.expectedCheckInId());
+                throw failure;
+            }
+        }, true, null);
     }
     private void reconcile() {
         if (busy || !operations.exists()) return;
@@ -138,6 +164,8 @@ public final class PaymentActivity extends Activity {
                         if (next.invoiceId != null && !operations.bindInvoice(next.invoiceId)) throw new IllegalArgumentException();
                         if (invoice != null && !invoice.bolt11.isEmpty() && !next.bolt11.isEmpty() && !invoice.bolt11.equals(next.bolt11)) throw new IllegalArgumentException();
                         invoice = next;
+                        if ((next.invoiceId != null || PaymentContract.terminal(next.status))
+                            && !checkIns.release(operations.origin(), operations.store(), operations.expectedCheckInId())) throw new IllegalStateException();
                         showInvoice();
                     } else if (success != null) success.accept(response);
                 } catch (Exception e) {
@@ -147,9 +175,10 @@ public final class PaymentActivity extends Activity {
                         : "Payment outcome unknown. Refresh status; do not charge again.");
                     if (operations.exists()) {
                         button("Refresh status", this::reconcile);
+                        button("Reconcile with server", this::requestReconciliation);
                         button("Request cancellation", this::cancel);
                         button("Settings / login", () -> startActivity(new Intent(this, SettingsActivity.class)));
-                    } else { button("Check availability again", this::probe); button("Return to check-in", this::finish); }
+                    } else { button("Check availability again", this::probe); button("Payment history / late settlement", this::history); button("Return to check-in", this::finish); }
                 }
                 schedulePoll();
             });
@@ -173,12 +202,14 @@ public final class PaymentActivity extends Activity {
             } catch (Exception e) { message.append("\nQR unavailable. Refresh status."); }
         }
         if (PaymentContract.terminal(invoice.status)) {
+            button("Reconcile with server", this::requestReconciliation);
             button("paid".equals(invoice.status) ? "Payment received — finish" : "Finish and return to check-in", () -> {
                 if (!busy && invoice != null && operations.clearTerminal(invoice.status)) finish();
             });
         } else {
             if ("review".equals(invoice.status)) message.append("\nStaff review required. Do not create another charge.");
             button("Refresh status", this::reconcile);
+            button("Reconcile with server", this::requestReconciliation);
             button("Request cancellation", this::cancel);
         }
     }
@@ -186,6 +217,20 @@ public final class PaymentActivity extends Activity {
         if (busy || !operations.exists() || (invoice != null && PaymentContract.terminal(invoice.status))) return;
         // Always read back after cancellation: settlement can win this race.
         request(() -> api.cancelAndRead(operations.id()), true, null);
+    }
+    private void requestReconciliation() {
+        if (busy || !operations.exists()) return;
+        EditText reason = new EditText(this);
+        reason.setHint("Operator reason (required, maximum 500 characters)");
+        reason.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(500)});
+        new AlertDialog.Builder(this).setTitle("Reconcile with server?")
+            .setMessage("Authorized staff only. The server may revoke this invoice if it can prove non-payability; uncertainty remains locked. Do not enter customer or card secrets.")
+            .setView(reason).setNegativeButton("Back", null)
+            .setPositiveButton("Reconcile", (dialog, which) -> {
+                String text = reason.getText().toString().trim();
+                if (text.isEmpty()) { Toast.makeText(this, "A reconciliation reason is required.", Toast.LENGTH_LONG).show(); return; }
+                request(() -> api.reconcileAndRead(operations.id(), text), true, null);
+            }).show();
     }
     private void schedulePoll() {
         handler.removeCallbacks(poll);
