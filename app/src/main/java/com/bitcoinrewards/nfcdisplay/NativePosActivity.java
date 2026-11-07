@@ -15,6 +15,101 @@ public final class NativePosActivity extends Activity {
     private WebView web;
     private WebOriginPolicy policy;
     private String entry;
+    private String origin, store;
+    private LinearLayout discoveryPanel;
+    private PosDiscoveryClient discovery;
+    private Thread worker;
+    private PosDiscoveryGate gate;
+    private boolean resumed;
+    private boolean wantsDiscovery;
+
+    private boolean current(long token) {
+        return !isFinishing() && gate != null
+            && gate.accepts(token, SettingsActivity.getBtcpayUrl(this), SettingsActivity.getStoreId(this));
+    }
+    private void cancelDiscovery() {
+        if (gate != null) gate.invalidate();
+        if (discovery != null) { discovery.cancel(); discovery = null; }
+        if (worker != null) { worker.interrupt(); worker = null; }
+    }
+    private void discover() {
+        cancelDiscovery();
+        final long token = gate.invalidate();
+        discoveryPanel.removeAllViews();
+        TextView status = new TextView(this);
+        status.setText("Finding this store’s BTCPay keypad…");
+        discoveryPanel.addView(status);
+        final PosDiscoveryClient client = new PosDiscoveryClient();
+        discovery = client;
+        final String cookie = CookieManager.getInstance().getCookie(PosDiscovery.listUrl(origin, store));
+        worker = new Thread(() -> {
+            try {
+                java.util.List<PosDiscovery.App> apps = client.discover(origin, store, cookie);
+                runOnUiThread(() -> {
+                    if (!current(token)) return;
+                    if (new PaymentOperationStore(this).exists()) { recovery(); return; }
+                    discoveryPanel.removeAllViews();
+                    if (apps.size() == 1) { launch(apps.get(0).url, token); return; }
+                    if (apps.isEmpty()) { discoveryError("No active Keypad POS was found for this store. In BTCPay, configure a Point of Sale app with Keypad style, then retry.", token); return; }
+                    ScrollView scroll = new ScrollView(this);
+                    LinearLayout choices = new LinearLayout(this);
+                    choices.setOrientation(LinearLayout.VERTICAL);
+                    scroll.addView(choices);
+                    discoveryPanel.addView(scroll);
+                    TextView title = new TextView(this);
+                    title.setText("Choose this store’s keypad:");
+                    choices.addView(title);
+                    for (PosDiscovery.App app : apps) {
+                        Button choice = new Button(this);
+                        choice.setText(app.name + " (" + app.id + ")");
+                        choice.setOnClickListener(v -> launch(app.url, token));
+                        choices.addView(choice);
+                    }
+                });
+            } catch (Exception failure) {
+                int code = failure instanceof PosDiscoveryClient.Failure ? ((PosDiscoveryClient.Failure) failure).status : 0;
+                runOnUiThread(() -> {
+                    if (!current(token)) return;
+                    String message = code == 403 ? "Your BTCPay account does not have permission to manage this store’s apps. Sign in with an authorized store account."
+                        : code == 401 || (code >= 300 && code <= 399) ? "BTCPay needs an authorized store session. Return to Settings and scan a fresh BTCPay Login Code. A redirected store page may also mean this store is unavailable."
+                        : code == 404 ? "The store apps page is unavailable. Check this server and Store ID; this is not proof that your login expired."
+                        : "Could not safely read this store’s apps. Check connectivity, or use the manual POS fallback in Settings. No payment has been created.";
+                    discoveryError(message, token);
+                });
+            }
+        }, "btcpay-pos-discovery");
+        worker.start();
+    }
+    private void discoveryError(String message, long token) {
+        discoveryPanel.removeAllViews();
+        TextView guidance = new TextView(this);
+        guidance.setText(message);
+        discoveryPanel.addView(guidance);
+        Button retry = new Button(this);
+        retry.setText("Retry discovery");
+        retry.setOnClickListener(v -> { if (current(token)) discover(); });
+        discoveryPanel.addView(retry);
+        Button settings = new Button(this);
+        settings.setText("Settings / BTCPay login");
+        settings.setOnClickListener(v -> { startActivity(new Intent(this, SettingsActivity.class)); finish(); });
+        discoveryPanel.addView(settings);
+        String manual = SettingsActivity.getPosUrl(this);
+        if (!manual.isEmpty()) {
+            Button fallback = new Button(this);
+            fallback.setText("Use this profile’s manually configured POS");
+            fallback.setOnClickListener(v -> launch(manual, token));
+            discoveryPanel.addView(fallback);
+        }
+    }
+    private void launch(String url, long token) {
+        if (!current(token)) { finish(); return; }
+        if (new PaymentOperationStore(this).exists()) { recovery(); return; }
+        entry = PosUrlPolicy.require(origin, url);
+        wantsDiscovery = false;
+        cancelDiscovery();
+        discoveryPanel.removeAllViews();
+        createWeb(discoveryPanel);
+    }
     private void recovery() {
         startActivity(new Intent(this, PaymentActivity.class));
         finish();
@@ -59,19 +154,26 @@ public final class NativePosActivity extends Activity {
     private void openPos(LinearLayout root) {
         if (new PaymentOperationStore(this).exists()) { recovery(); return; }
         try {
-            entry = SettingsActivity.getPosUrl(this);
-            policy = new WebOriginPolicy(SettingsActivity.getBtcpayUrl(this));
-            if (entry.isEmpty()) throw new IllegalArgumentException();
+            origin = ApiOrigin.requireConfigured(SettingsActivity.getBtcpayUrl(this)).toString();
+            store = SettingsActivity.getStoreId(this);
+            PosDiscovery.listUrl(origin, store);
+            policy = new WebOriginPolicy(origin);
+            gate = new PosDiscoveryGate(origin, store);
+            if (resumed) gate.resume();
         } catch (Exception e) {
             TextView guidance = new TextView(this);
-            guidance.setText("Configure the native BTCPay POS URL for this server and Store ID in Settings. No payment has been created.");
+            guidance.setText("Configure this BTCPay server and Store ID in Settings first. No POS URL is required.");
             root.addView(guidance);
-            Button settings = new Button(this);
-            settings.setText("Settings");
-            settings.setOnClickListener(v -> { startActivity(new Intent(this, SettingsActivity.class)); finish(); });
-            root.addView(settings);
             return;
         }
+        discoveryPanel = new LinearLayout(this);
+        discoveryPanel.setOrientation(LinearLayout.VERTICAL);
+        root.addView(discoveryPanel, new LinearLayout.LayoutParams(-1, 0, 1));
+        wantsDiscovery = true;
+        if (resumed) discover();
+    }
+    @SuppressLint("SetJavaScriptEnabled")
+    private void createWeb(LinearLayout root) {
         web = new WebView(this);
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         WebSettings s = web.getSettings();
@@ -113,13 +215,26 @@ public final class NativePosActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
+        if (gate != null) gate.resume();
         com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService.clearPayload();
-        if (web != null && new PaymentOperationStore(this).exists()) { web.stopLoading(); recovery(); }
+        if (new PaymentOperationStore(this).exists()) { if (web != null) web.stopLoading(); recovery(); return; }
+        if (origin != null && (!origin.equals(SettingsActivity.getBtcpayUrl(this)) || !store.equals(SettingsActivity.getStoreId(this)))) { finish(); return; }
+        if (web != null) web.onResume();
+        if (wantsDiscovery && discoveryPanel != null) discover();
+    }
+    @Override protected void onPause() {
+        resumed = false;
+        if (gate != null) gate.pause();
+        cancelDiscovery();
+        if (web != null) web.onPause();
+        super.onPause();
     }
     @Override public void onBackPressed() {
         if (new PaymentOperationStore(this).exists()) recovery(); else finish();
     }
     @Override protected void onDestroy() {
+        cancelDiscovery();
         if (web != null) { web.stopLoading(); web.destroy(); web = null; }
         super.onDestroy();
     }

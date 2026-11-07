@@ -1,10 +1,8 @@
-# Rewards NFC Display 2.18.0
+# Rewards NFC Display 2.19.0
 
-- Prominent Customer rewards and Take payment staff actions on the main screen.
-- Take payment opens the merchant's existing native BTCPay POS in a dedicated in-app WebView with Back to rewards. Configure the optional HTTPS `/apps/APP_ID/pos` URL in Settings, then Save & launch display; no merchant URL is shipped as a default. The URL is bound to the configured server and Store ID.
-- Replaces new custom payment creation. Existing custom PaymentOperationStore operations and history remain recoverable with their original durable identity. Unresolved operations continue to block rewards and native POS until reconciled and explicitly finished.
-- Changing server or Store ID drops an inherited POS URL; configure the correct app URL for the new profile. Interrupted activity recreation shows a check-BTCPay-before-reopening warning rather than silently opening a fresh keypad. No invoice/session state is serialized.
-- Stops rewards camera/NFC capture and clears stale HCE rewards payloads before POS launch. Native POS does not add Android NFC payment functionality.
-- Preserves native BTCPay Login Code flow and CookieManager sessions, HTTPS same-origin navigation, TLS validation, NFC/rewards capture and scanner recovery. POS denies cross-origin resources, external intents, file/content access and WebView permission requests.
+- **Take payment needs no POS URL typing.** The app uses your existing BTCPay login session to discover active apps belonging to the configured Store ID. One suitable Keypad Point of Sale opens automatically; multiple keypads show their names and app IDs for explicit selection. Other POS styles and unrelated apps are never picked as a substitute.
+- Discovery reads BTCPay's cookie-authenticated exact-store apps page, not the API-key-only Greenfield apps API. It makes one bounded HTTPS request to the configured origin, never follows redirects with cookies, and does not create an invoice, collect API keys, or enumerate other stores.
+- Discovery cancels on pause/destruction and rejects late results or selections after lifecycle/profile changes. A missing login, store permission rejection, missing route and unsupported markup receive separate guidance. The optional profile-bound manual POS setting remains an explicit fallback, not the normal workflow.
+- Retains Back to rewards, native BTCPay Login Code scanning, same-origin WebView/TLS restrictions, camera/NFC/HCE suspension in payment mode, and all existing custom-payment recovery/history and unresolved-operation locks. Back still does not cancel a BTCPay invoice.
 
-No server changes or fund-moving acceptance tests. Physical tablet upgrade, camera/NFC ownership, merchant POS checkout and return-to-rewards acceptance remain device-only checks.
+No server/plugin changes, invoice creation or fund-moving tests were performed. Physical signed upgrade, authenticated tablet discovery, checkout/return, login/session, lifecycle and NFC/camera acceptance remain device-only checks.

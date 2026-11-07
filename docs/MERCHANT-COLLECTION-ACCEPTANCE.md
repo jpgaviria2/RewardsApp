@@ -1,8 +1,10 @@
-# Native POS and legacy collection acceptance — 2.18.0 (51)
+# Native POS and legacy collection acceptance — 2.19.0 (52)
 
 ## Current release behavior
 
-The main page exposes Customer rewards and Take payment. Staff configure an optional same-server HTTPS `/apps/APP_ID/pos` URL in Settings and use Save & launch display. No merchant URL is built in. Changing origin or Store ID erases the old POS binding and clears inherited UI input; explicitly entered replacement URLs are accepted only under the same-origin URL policy. Scanner Save validates its inputs before changing the display profile; an actual keystore write failure remains fail-closed and can leave display settings saved with scanner provisioning disabled.
+The main page exposes Customer rewards and Take payment. No POS URL typing is required: Take payment reads the configured store's cookie-authenticated `/stores/{storeId}/apps` page. Exactly one active Keypad POS opens automatically; multiple suitable apps require named selection (with IDs to distinguish duplicate names). Ownership links must match the exact configured store, POS settings links must match the same app and origin, and the rendered style must be Keypad. Cart/catalog/other apps are not arbitrary substitutes. Requests are bounded to one HTTPS GET, 512 KiB, 100 app rows and explicit timeouts with redirects disabled. Unsupported markup, missing session, store permission denial and unavailable routes fail closed with retry/settings guidance. Async results and selections are lifecycle-generation and origin/store bound, cancelled on pause/destruction and rechecked before opening POS.
+
+The optional same-server HTTPS `/apps/APP_ID/pos` Settings value remains an explicit manual fallback after failed/empty discovery, never a built-in merchant default. Changing origin or Store ID erases that old binding and clears inherited input; scanner Save validates inputs before changing the display profile. A keystore write failure remains fail-closed and can leave display settings saved with scanner provisioning disabled.
 
 Take payment opens the existing native BTCPay POS in a dedicated WebView, not the former Android custom invoice keypad. CookieManager owns the login session; no login code, cookie or WebView state is serialized by this Activity. File/content access, mixed content, external navigation and WebView permission requests are denied. Android native NFC payment functionality is not added. Rewards scanner/camera/reader ownership stops before launch, stale reads are generation-gated, and old HCE payload is cleared.
 
@@ -30,7 +32,7 @@ Device-only acceptance remains outstanding when no device is attached:
 
 1. Fresh and upgrade launch, settings, Store/Login QR flows, CookieManager session reuse, expired login and process restart.
 2. Configure POS for profile A; switch to B through display/scanner/login paths; verify no inherited URL or A→B→A resurrection. Test scanner validation/storage failures and explicit replacement URL.
-3. Take payment shows the native merchant keypad; no Android custom create screen. Verify layout on the actual tablet and trusted navigation/TLS failure behavior without creating an invoice.
+3. With the POS URL field empty, Take payment automatically opens a single active Keypad POS for this store. With multiple keypads, select by name/ID, never an arbitrary first entry. Verify no-keypad, expired login, insufficient store permission, transient network failure, unsupported markup and retry. Pause during discovery, change profile, return A→B→A and confirm old responses/selections cannot open the wrong POS. Confirm the optional manual fallback is explicit. Verify actual tablet layout and trusted navigation/TLS failure behavior without creating an invoice.
 4. Verify rewards camera/NFC stop while POS is foreground and stale HCE/queued reads cannot broadcast/check in; Back resumes trusted-display authorization and original scanning.
 5. Recreate/background/force-stop/reenter POS: interrupted-checkout guidance appears as designed; Back and history do not imply cancellation. Do not create a replacement charge merely because a page was closed.
 6. Upgrade with an already outstanding old custom operation; verify recovery/unknown locks, settings/login, history and explicit validated terminal Finish. No test may manufacture or silently clear a real financial operation.
@@ -39,6 +41,6 @@ No fund-moving tests are authorized. Even an unfunded invoice is a server-side w
 
 ## Distribution and repair
 
-Version 2.18.0 (51), asset `rewards-nfc-display-2.18.0-production.apk`, feature-branch/tag public distribution for user testing. Main merge is not authorized. Existing main-only trusted release automation remains unchanged; local production signing requires exact-head CI and independent review evidence. Retain release checksum, certificate, source and relay/CDN receipts in the durable worklog.
+Version 2.19.0 (52), asset `rewards-nfc-display-2.19.0-production.apk`, feature-branch/tag public distribution for user testing. Main merge is not authorized. Existing main-only trusted release automation remains unchanged; local production signing requires exact-head CI and independent review evidence. Retain release checksum, certificate, source and relay/CDN receipts in the durable worklog.
 
 If a published test build is faulty, mark the GitHub release with an install warning and communicate the affected version. Preserve immutable tags/artifacts and old payment state. Correct through a reviewed higher-versionCode, same-certificate forward release; do not force-replace public bytes, wipe identities or promise an ordinary in-place downgrade.

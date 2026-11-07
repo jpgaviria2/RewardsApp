@@ -29,12 +29,27 @@ public class NativePosSourceTest {
         assertFalse(gate.contains("web.loadUrl"));
         assertFalse(pos.contains("putString("));
     }
+    @Test public void discoveryUsesExistingSessionAndFencesSelectionBeforeWebCreation() throws Exception {
+        String pos = source("NativePosActivity");
+        assertTrue(pos.contains("getCookie(PosDiscovery.listUrl(origin, store))"));
+        assertTrue(pos.contains("apps.size() == 1"));
+        assertTrue(pos.contains("for (PosDiscovery.App app : apps)"));
+        assertTrue(pos.contains("choice.setText(app.name"));
+        assertTrue(pos.contains("if (!current(token)) return;"));
+        assertTrue(pos.contains("gate.accepts(token, SettingsActivity.getBtcpayUrl(this), SettingsActivity.getStoreId(this))"));
+        assertTrue(pos.contains("gate.pause()"));
+        assertTrue(pos.contains("client.discover(origin, store, cookie)"));
+        assertTrue(pos.contains("worker.interrupt()"));
+        assertTrue(pos.contains("discovery.cancel()"));
+        assertTrue(pos.contains("PosUrlPolicy.require(origin, url)"));
+        assertTrue(pos.indexOf("if (!current(token)) { finish(); return; }") < pos.indexOf("createWeb(discoveryPanel)"));
+    }
     private String source(String name) throws Exception {
         return new String(Files.readAllBytes(Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/" + name + ".java")), StandardCharsets.UTF_8);
     }
     @Test public void posHasNoNativeCaptureOrCustomCreatePath() throws Exception {
         String pos = source("NativePosActivity");
-        for (String forbidden : new String[]{"enableReaderMode", "BarcodeCallback", "addJavascriptInterface", "PaymentApi", "api.create", "getCookie(", "setCookie(", "saveState(", "restoreState(", "SslErrorHandler.proceed"}) assertFalse(forbidden, pos.contains(forbidden));
+        for (String forbidden : new String[]{"enableReaderMode", "BarcodeCallback", "addJavascriptInterface", "PaymentApi", "api.create", "setCookie(", "saveState(", "restoreState(", "SslErrorHandler.proceed"}) assertFalse(forbidden, pos.contains(forbidden));
         assertTrue(pos.contains("NdefHostCardEmulationService.clearPayload()"));
         assertTrue(pos.contains("Back does not cancel a BTCPay invoice"));
         assertTrue(pos.contains("request.deny()"));

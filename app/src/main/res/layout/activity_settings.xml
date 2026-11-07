@@ -50,7 +50,7 @@
             android:id="@+id/input_pos_url"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Native POS URL (optional): https://server/apps/APP_ID/pos"
+            android:hint="Manual POS fallback only (normally discovered automatically)"
             android:inputType="textUri"
             android:textColor="#ffffff"
             android:textColorHint="#8888aa" />
