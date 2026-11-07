@@ -17,8 +17,16 @@ final class PaymentOperationStore {
     String invoiceId() { return prefs.getString("invoice_id", null); }
     String expectedCheckInId() { return prefs.getString("expected_checkin", null); }
     boolean bindInvoice(String id) {
+        if (!exists() || id == null || id.isEmpty()) return false;
         String previous = invoiceId();
-        return exists() && (previous == null ? prefs.edit().putString("invoice_id", id).commit() : previous.equals(id));
+        if (previous != null) return previous.equals(id);
+        boolean committed = prefs.edit().putString("invoice_id", id).commit();
+        if (!committed) {
+            // A failed Android commit still changes memory. Restore the unbound
+            // state so matching responses cannot bypass the required disk retry.
+            prefs.edit().remove("invoice_id").commit();
+        }
+        return committed;
     }
     boolean tapAttempted() { return prefs.getBoolean("tap_attempted", false); }
     boolean begin(String origin, String store, long amount) {

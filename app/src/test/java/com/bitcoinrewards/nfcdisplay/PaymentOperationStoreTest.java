@@ -126,6 +126,33 @@ public class PaymentOperationStoreTest {
         assertEquals("invoice1", memory.open().invoiceId());
         assertEquals(id, memory.open().history().getJSONObject(0).getString("operation"));
     }
+    @Test public void failedInvoiceBindingRequiresDurableRetryBeforeAcceptance() {
+        Memory memory = new Memory(); PaymentOperationStore op = memory.open();
+        assertTrue(op.begin("https://merchant.example", "Store1", 100));
+        memory.writable = false;
+        assertFalse(op.bindInvoice("invoice1")); assertNull(memory.open().invoiceId());
+        assertFalse(memory.open().bindInvoice("invoice1")); assertNull(memory.open().invoiceId());
+        memory.writable = true;
+        assertTrue(memory.open().bindInvoice("invoice1"));
+        memory.restartProcess();
+        assertEquals("invoice1", memory.open().invoiceId());
+        assertTrue(memory.open().bindInvoice("invoice1"));
+        assertFalse(memory.open().bindInvoice("invoice2"));
+        assertFalse(memory.open().bindInvoice(null));
+        assertFalse(memory.open().bindInvoice(""));
+        assertEquals("invoice1", memory.open().invoiceId());
+    }
+    @Test public void failedInvoiceBindingCannotLeakIntoAnotherSuccessfulWrite() {
+        Memory memory = new Memory(); PaymentOperationStore op = memory.open();
+        assertTrue(op.begin("https://merchant.example", "Store1", 100));
+        memory.writable = false; assertFalse(op.bindInvoice("invoice1"));
+        memory.writable = true; assertTrue(op.markTap());
+        memory.restartProcess();
+        assertNull(memory.open().invoiceId());
+        assertTrue(memory.open().tapAttempted());
+        assertTrue(memory.open().bindInvoice("invoice1"));
+        memory.restartProcess(); assertEquals("invoice1", memory.open().invoiceId());
+    }
     @Test public void persistedFieldsAreOnlyNonSecretIdentityAndDispatchMetadata() {
         Memory memory = new Memory(); PaymentOperationStore operation = memory.open();
         operation.begin("https://merchant.example", "Store1", 100); operation.bindInvoice("invoice1"); operation.markTap();
