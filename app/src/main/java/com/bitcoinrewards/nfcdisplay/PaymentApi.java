@@ -53,6 +53,20 @@ final class PaymentApi {
         if (reason == null || reason.trim().isEmpty() || reason.length() > 500) throw new IllegalArgumentException();
         return mutateAndRead(operationId, "/reconcile", new JSONObject().put("reason", reason));
     }
+    JSONObject reconcileAndRead(PaymentOperationStore operation, String reason) throws Exception {
+        if (reason == null || reason.trim().isEmpty() || reason.length() > 500) throw new IllegalArgumentException();
+        if (!operation.exists() || !origin.equals(operation.origin()) || !store.equals(operation.store())) throw new IllegalArgumentException();
+        // Use the persisted create identity, including after restart/404. Only the server
+        // can fence an unadmitted UUID; neither the POST ACK nor absence permits reset.
+        String operationId = operation.id();
+        long amount = operation.amount();
+        String expected = operation.expectedCheckInId();
+        if (amount <= 0 || amount > PaymentContract.MAX_MINOR
+                || (expected != null && !CollectionCheckInStore.valid(expected))) throw new IllegalArgumentException();
+        JSONObject body = new JSONObject().put("reason", reason).put("amountMinor", amount);
+        if (expected != null) body.put("expectedCheckInId", expected);
+        return mutateAndRead(operationId, "/reconcile", body);
+    }
     JSONObject create(PaymentOperationStore operation) throws Exception {
         if (!operation.exists() || !origin.equals(operation.origin()) || !store.equals(operation.store())) throw new IllegalArgumentException();
         JSONObject body = new JSONObject().put("operationId", operation.id()).put("amountMinor", operation.amount());

@@ -113,11 +113,96 @@ public class PaymentApiTest {
             Connection read = new Connection(); read.response = "{\"status\":\"review\"}";
             java.util.List<String> paths = new java.util.ArrayList<>();
             PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> { paths.add(url); return paths.size() == 1 ? post : read; }, url -> "session=test-only");
-            assertEquals("review", api.reconcileAndRead(ID, "Investigate interrupted collection").getString("status"));
-            assertEquals("Investigate interrupted collection", new JSONObject(post.sent.toString("UTF-8")).getString("reason"));
-            assertEquals(2, paths.size()); assertTrue(paths.get(0).endsWith("/"+ID+"/reconcile"));
-            assertTrue(paths.get(1).endsWith("/"+ID)); assertEquals("POST", post.getRequestMethod());
+            PaymentOperationStoreTest.Memory memory = new PaymentOperationStoreTest.Memory();
+            assertTrue(memory.open().begin(ORIGIN, "Store1", 1234, ID));
+            String operationId = memory.open().id();
+            assertEquals("review", api.reconcileAndRead(memory.open(), "Investigate interrupted collection").getString("status"));
+            JSONObject body = new JSONObject(post.sent.toString("UTF-8"));
+            assertEquals("Investigate interrupted collection", body.getString("reason"));
+            assertEquals(1234, body.getLong("amountMinor")); assertEquals(ID, body.getString("expectedCheckInId"));
+            assertEquals(2, paths.size()); assertTrue(paths.get(0).endsWith("/"+operationId+"/reconcile"));
+            assertTrue(paths.get(1).endsWith("/"+operationId)); assertEquals("POST", post.getRequestMethod());
             assertEquals("GET", read.getRequestMethod()); assertFalse(post.getInstanceFollowRedirects());
+        }
+    }
+    private JSONObject cancelled(String operation, long amount) throws Exception {
+        return new JSONObject().put("operationId", operation).put("amountMinor", amount)
+            .put("currency", "CAD").put("status", "cancelled").put("invoiceId", JSONObject.NULL)
+            .put("bolt11", JSONObject.NULL).put("expiresAt", JSONObject.NULL);
+    }
+    @Test public void unknownReadThenScopedReconcileSendsOriginalIdentityAndValidatesTerminalGet() throws Exception {
+        for (String expected : new String[]{ID.toUpperCase(java.util.Locale.ROOT), null}) {
+            PaymentOperationStoreTest.Memory memory = new PaymentOperationStoreTest.Memory();
+            assertTrue(memory.open().begin(ORIGIN, "Store1", 1234, expected));
+            String operationId = memory.open().id();
+            // Transport fixtures only: durable fencing/delayed-create exclusion belong to backend tests.
+            Connection unknown = new Connection(); unknown.code = 404; unknown.response = "{\"noOperation\":true}";
+            Connection post = new Connection(); post.response = cancelled(operationId, 1234).toString();
+            Connection read = new Connection(); read.response = cancelled(operationId, 1234).toString();
+            Connection[] replies = {unknown, post, read};
+            java.util.List<String> paths = new java.util.ArrayList<>();
+            PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> {
+                paths.add(url); return replies[paths.size() - 1];
+            }, url -> "session=test-only");
+            try { api.request("GET", "/invoices/" + operationId, null); fail(); }
+            catch (PaymentApi.Failure failure) { assertEquals(404, failure.code); }
+            assertTrue(memory.open().exists()); assertEquals(operationId, memory.open().id());
+            assertEquals(expected, memory.open().expectedCheckInId());
+            // Reopening preferences models Activity/process recovery; no create or client reset.
+            PaymentOperationStore recovered = memory.open();
+            JSONObject result = api.reconcileAndRead(recovered, "Operator confirmed abandonment");
+            JSONObject body = new JSONObject(post.sent.toString("UTF-8"));
+            assertEquals("Operator confirmed abandonment", body.getString("reason"));
+            assertEquals(1234, body.getLong("amountMinor"));
+            assertEquals(expected != null, body.has("expectedCheckInId"));
+            if (expected != null) assertEquals(expected, body.getString("expectedCheckInId"));
+            assertEquals(expected == null ? 2 : 3, body.length());
+            assertEquals(3, paths.size());
+            String path = ORIGIN + "/plugins/bitcoin-rewards/Store1/pos/api/invoices/" + operationId;
+            assertEquals(path, paths.get(0)); assertEquals(path + "/reconcile", paths.get(1));
+            assertEquals(path, paths.get(2)); assertEquals("POST", post.getRequestMethod());
+            assertEquals("GET", read.getRequestMethod()); assertEquals(ORIGIN, post.getRequestProperty("Origin"));
+            PaymentContract.Invoice invoice = new PaymentContract.Invoice(result, recovered.id(), recovered.amount(), recovered.invoiceId());
+            assertEquals("cancelled", invoice.status); assertNull(invoice.invoiceId);
+            assertTrue(PaymentContract.terminal(invoice.status));
+            assertTrue(recovered.exists()); // Explicit Finish, not transport, releases the local guard.
+            assertEquals(operationId, recovered.id()); assertEquals(1234, recovered.amount());
+            assertEquals(expected, recovered.expectedCheckInId());
+        }
+    }
+    @Test public void fencedReconcileAckNeverReplacesUnknownOrContradictoryGet() throws Exception {
+        for (boolean missing : new boolean[]{true, false}) {
+            PaymentOperationStoreTest.Memory memory = new PaymentOperationStoreTest.Memory();
+            assertTrue(memory.open().begin(ORIGIN, "Store1", 1234, ID));
+            PaymentOperationStore operation = memory.open();
+            Connection post = new Connection(); post.response = cancelled(operation.id(), 1234).toString();
+            Connection read = new Connection();
+            read.code = missing ? 404 : 200;
+            read.response = missing ? "{\"noOperation\":true}" : cancelled(operation.id(), 1235).toString();
+            int[] calls = {0};
+            PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> ++calls[0] == 1 ? post : read, url -> "session=test-only");
+            try {
+                JSONObject result = api.reconcileAndRead(operation, "Operator confirmed abandonment");
+                new PaymentContract.Invoice(result, operation.id(), operation.amount(), operation.invoiceId());
+                fail("POST cancellation ACK cannot authorize terminal recovery");
+            } catch (PaymentApi.Failure failure) { assertTrue(missing); assertEquals(404, failure.code); }
+            catch (IllegalArgumentException mismatch) { assertFalse(missing); }
+            assertEquals(2, calls[0]); assertTrue(operation.exists());
+            assertEquals(1234, operation.amount()); assertEquals(ID, operation.expectedCheckInId());
+        }
+    }
+    @Test public void scopedReconcileRejectsAbsentOrForeignOperationBeforeNetwork() throws Exception {
+        PaymentOperationStoreTest.Memory memory = new PaymentOperationStoreTest.Memory();
+        PaymentApi api = new PaymentApi(ORIGIN, "Store1", url -> { fail("No transport without matching identity"); return null; }, url -> "session=test-only");
+        try { api.reconcileAndRead(memory.open(), "Abandon"); fail(); } catch (IllegalArgumentException correct) { }
+        for (String[] scope : new String[][]{{"https://other.example", "Store1"}, {ORIGIN, "Store2"}}) {
+            PaymentOperationStoreTest.Memory other = new PaymentOperationStoreTest.Memory();
+            assertTrue(other.open().begin(scope[0], scope[1], 1234, ID));
+            try { api.reconcileAndRead(other.open(), "Abandon"); fail(); } catch (IllegalArgumentException correct) { }
+        }
+        assertTrue(memory.open().begin(ORIGIN, "Store1", 1234, ID));
+        for (String reason : new String[]{null, "", "   ", "x".repeat(501)}) {
+            try { api.reconcileAndRead(memory.open(), reason); fail(); } catch (IllegalArgumentException correct) { }
         }
     }
     @Test public void onlyExactBoundedStaleRejectionReleasesCustomerCapture() throws Exception {
