@@ -15,6 +15,13 @@ def run(script, *args, cwd=None, env=None):
     return subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True)
 
 class Gates(unittest.TestCase):
+    def test_android_setup_avoids_obsolete_tools_package(self):
+        workflows = SCRIPTS.parent.parent / ".github/workflows"
+        for name in ("android-ci.yml", "reviewed-release.yml"):
+            text = (workflows / name).read_text()
+            setup = text.split("uses: android-actions/setup-android@", 1)[1].split("      - ", 1)[0]
+            self.assertIn("packages: platform-tools", setup, name)
+            self.assertNotRegex(setup, r"packages:.*\btools\s+platform-tools", name)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.temp.name)

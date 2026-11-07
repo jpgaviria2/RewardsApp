@@ -56,6 +56,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
       - run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
       - name: Full clean lint, debug/release unit tests and debug APK
         run: bash scripts/ci/android-check.sh
