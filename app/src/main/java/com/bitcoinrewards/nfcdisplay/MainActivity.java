@@ -121,6 +121,7 @@ public class MainActivity extends Activity {
     private boolean idleTutorialEligible;
     private boolean activityResumed;
     private boolean inlineScannerRunning;
+    private boolean cameraCheckInEnabled;
     private boolean inlineSubmissionInFlight;
     private boolean captureConfirmationVisible;
     private String inlineAuthenticationFailure;
@@ -225,7 +226,7 @@ public class MainActivity extends Activity {
         submissionOverlay = findViewById(R.id.nfc_tap_overlay);
         successOverlay = findViewById(R.id.nfc_reader_overlay);
         confettiView = findViewById(R.id.check_in_confetti);
-        tapActionCard = findViewById(R.id.tap_action_card);
+
         idleTutorialPanel = findViewById(R.id.idle_tutorial_panel);
         tutorialFrame = findViewById(R.id.wallet_tutorial_frame);
         flipInlineCameraButton = findViewById(R.id.btn_flip_inline_camera);
@@ -241,10 +242,15 @@ public class MainActivity extends Activity {
         ImageButton settings = findViewById(R.id.btn_settings);
         settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
 
-        discoverRewardsCameras();
-        requestCameraPermissionIfNeeded();
+        cameraCheckInEnabled = SettingsActivity.isCameraCheckInEnabled(this);
+        if (cameraCheckInEnabled) {
+            discoverRewardsCameras();
+            requestCameraPermissionIfNeeded();
+        }
 
         WebSettings webSettings = webView.getSettings();
+        // Server-owned simplified presentation; not an authorization credential.
+        webSettings.setUserAgentString(webSettings.getUserAgentString() + " TrailsRewardsKiosk/1");
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setCacheMode(loginExchange ? WebSettings.LOAD_NO_CACHE : WebSettings.LOAD_DEFAULT);
@@ -260,7 +266,7 @@ public class MainActivity extends Activity {
                     for (String resource : request.getResources()) {
                         if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) camera = true;
                     }
-                    if (camera && policy.allowCamera(origin)) request.grant(new String[] { PermissionRequest.RESOURCE_VIDEO_CAPTURE });
+                    if (camera && cameraCheckInEnabled && policy.allowCamera(origin)) request.grant(new String[] { PermissionRequest.RESOURCE_VIDEO_CAPTURE });
                     else request.deny();
                 });
             }
@@ -437,6 +443,7 @@ public class MainActivity extends Activity {
     }
 
     private void requestCameraPermissionIfNeeded() {
+        if (!cameraCheckInEnabled) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
             && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[] { Manifest.permission.CAMERA }, CAMERA_PERMISSION_REQUEST);
@@ -446,6 +453,17 @@ public class MainActivity extends Activity {
     private boolean hasCameraPermission() {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
             || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void refreshCameraCheckInMode() {
+        boolean enabled = SettingsActivity.isCameraCheckInEnabled(this);
+        if (enabled == cameraCheckInEnabled) return;
+        pauseInlineRewardsScanner();
+        cameraCheckInEnabled = enabled;
+        if (enabled) {
+            discoverRewardsCameras();
+            requestCameraPermissionIfNeeded();
+        }
     }
 
     private void discoverRewardsCameras() {
@@ -504,15 +522,17 @@ public class MainActivity extends Activity {
             pauseInlineRewardsScanner();
             return;
         }
-        rewardsScannerPanel.setVisibility(View.VISIBLE);
-        boolean tutorialActive = idleTutorialEligible && activityResumed
-            && !inlineSubmissionInFlight && !captureConfirmationVisible
-            && inlineAuthenticationFailure == null
-            && (trustedDisplayRecovery == null || !trustedDisplayRecovery.isRecovering());
-        setTutorialActive(tutorialActive);
+        // One customer surface: server waiting/checked-in/reward content, not stacked native tiles.
+        rewardsScannerPanel.setVisibility(View.GONE);
+        setTutorialActive(false);
         if (inlineAuthenticationFailure != null) {
             pauseInlineRewardsScanner();
             setRewardsScannerStatus(inlineAuthenticationFailure);
+            return;
+        }
+        if (!cameraCheckInEnabled) {
+            pauseInlineRewardsScanner();
+            setRewardsScannerStatus("Ready — scan your rewards QR above");
             return;
         }
         if (!hasCameraPermission()) {
@@ -553,7 +573,7 @@ public class MainActivity extends Activity {
                 collectionWaitingPage = (explicitWaiting || checkedIn) && !rewardVisible;
                 idleTutorialEligible = explicitWaiting || (!hasExplicitState && !rewardVisible && !checkedIn);
                 if (idleTutorialPanel != null) {
-                    idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE : View.GONE);
+                    idleTutorialPanel.setVisibility(View.GONE);
                 }
                 updateInlineScannerState();
             });
@@ -602,6 +622,7 @@ public class MainActivity extends Activity {
 
     private final BarcodeCallback inlineRewardsCallback = new BarcodeCallback() {
         @Override public void barcodeResult(BarcodeResult result) {
+            if (!cameraCheckInEnabled) return;
             if (!canAcceptCustomerScan()) return;
             if (!activityResumed || collectionBlocked() || result == null || result.getText() == null || inlineSubmissionInFlight || !scannerPageEligible) return;
             WalletQrPayloadParser.ParsedPayload payload;
@@ -754,7 +775,12 @@ public class MainActivity extends Activity {
     }
 
     private void setRewardsScannerStatus(String text) {
-        if (rewardsScannerStatus != null) rewardsScannerStatus.setText(text);
+        if (rewardsScannerStatus != null) {
+            rewardsScannerStatus.setText(text);
+            boolean routine = text.startsWith("Ready") || text.startsWith("Wallet connected")
+                || text.startsWith("Connecting ") || text.startsWith("Reading your rewards card");
+            rewardsScannerStatus.setVisibility(routine ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void setTutorialActive(boolean active) {
@@ -795,7 +821,10 @@ public class MainActivity extends Activity {
         finishCelebration = null;
         celebration.clear();
         if (confettiView != null) confettiView.stop();
-        if (rewardsScannerStatus != null) rewardsScannerStatus.setText(R.string.scanner_ready);
+        if (rewardsScannerStatus != null) {
+            rewardsScannerStatus.setText(R.string.scanner_ready);
+            rewardsScannerStatus.setVisibility(View.GONE);
+        }
         captureConfirmationVisible = false;
         if (submissionOverlay != null) {
             submissionOverlay.animate().cancel();
@@ -1019,6 +1048,8 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         activityResumed = true;
+        // Older display instances must honor a camera opt-in or revocation saved in Settings.
+        refreshCameraCheckInMode();
         boolean returningFromCollection = collectionLaunching;
         collectionLaunching = false;
         if (new PaymentOperationStore(this).exists()) { openCollection(); return; }

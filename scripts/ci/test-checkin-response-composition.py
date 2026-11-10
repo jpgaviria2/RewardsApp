@@ -44,6 +44,8 @@ public class MainActivity extends ActivityBase {
  static final String LEGACY_INLINE_DEVICE_ID="kiosk";
  Recovery trustedDisplayRecovery; static class Recovery {boolean isRecovering(){return false;}}
  boolean collectionBlocked(){return blocked;}
+ // Camera policy is executed separately by test-kiosk-camera-mode.py; this probe models admission effects.
+ void refreshCameraCheckInMode(){}
  void openCollection(){} void setTutorialActive(boolean b){} void disableNfcReader(){}
  void pauseInlineRewardsScanner(){cameraRunning=false;}
  static class Hid {void reset(){}} Hid hidScanner=new Hid();

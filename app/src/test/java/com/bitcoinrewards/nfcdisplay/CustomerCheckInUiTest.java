@@ -35,29 +35,14 @@ public class CustomerCheckInUiTest {
         assertTrue("Presentation must not tighten the financial capture contract", main.contains("ConfirmedCheckInResponse.confirmedId(responseBytes)"));
         assertTrue("Late responses must not celebrate on another page or a blocked financial surface", completion.contains("if (!canAcceptCustomerScan() || requestEpoch != captureEpoch)"));
     }
-    @Test public void customerIdleReplacesCameraCutoutWithProminentScanHere() throws Exception {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        Document layout = factory.newDocumentBuilder().parse("src/main/res/layout/activity_main.xml");
-        Element prompt = null;
-        NodeList nodes = layout.getElementsByTagName("TextView");
-        for (int i = 0; i < nodes.getLength(); i++) {
-            Element element = (Element) nodes.item(i);
-            if ("@+id/scan_here_prompt".equals(element.getAttributeNS(ANDROID, "id"))) prompt = element;
-        }
-        assertNotNull("Idle must have a Scan here prompt instead of the camera cutout", prompt);
-        assertEquals("@string/scan_here", prompt.getAttributeNS(ANDROID, "text"));
-        assertEquals("48sp", prompt.getAttributeNS(ANDROID, "textSize"));
-        assertEquals("match_parent", prompt.getAttributeNS(ANDROID, "layout_height"));
-        String strings = new String(Files.readAllBytes(java.nio.file.Paths.get("src/main/res/values/strings.xml")), java.nio.charset.StandardCharsets.UTF_8);
-        assertTrue(strings.contains("Hold QR toward the scanner"));
-        assertFalse(new String(Files.readAllBytes(java.nio.file.Paths.get("src/main/res/layout/activity_main.xml")), java.nio.charset.StandardCharsets.UTF_8).contains("@string/camera_guide"));
-        NodeList buttons = layout.getElementsByTagName("Button");
-        for (int i = 0; i < buttons.getLength(); i++) {
-            Element button = (Element) buttons.item(i);
-            if ("@+id/btn_flip_inline_camera".equals(button.getAttributeNS(ANDROID, "id"))) {
-                assertEquals("gone", button.getAttributeNS(ANDROID, "visibility"));
-            }
-        }
+    // JP explicitly superseded the 2.21.0 prominent Scan here design. Financial,
+    // response, HID and lifecycle assertions above remain unchanged.
+    @Test public void customerCardDoesNotStackNativeIdleInstructionsAboveServerConfirmation() throws Exception {
+        String main = new String(Files.readAllBytes(java.nio.file.Paths.get("src/main/java/com/bitcoinrewards/nfcdisplay/MainActivity.java")), java.nio.charset.StandardCharsets.UTF_8);
+        assertFalse(main.contains("rewardsScannerPanel.setVisibility(View.VISIBLE)"));
+        assertFalse(main.contains("idleTutorialPanel.setVisibility(idleTutorialEligible ? View.VISIBLE"));
+        assertTrue(main.contains("setTutorialActive(false)"));
+        assertTrue("NFC is still wired", main.contains("this::onNfcTagDiscovered"));
+        assertTrue("Camera decoder is preserved, not started by a new scanner cue", main.contains("inlineRewardsScanner.decodeContinuous(inlineRewardsCallback)"));
     }
 }

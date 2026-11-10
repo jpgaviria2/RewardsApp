@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.TextView;
 
@@ -33,6 +34,7 @@ public class SettingsActivity extends Activity {
     static final String KEY_CREDENTIAL_UPDATE_PENDING = "credential_update_pending";
 
     private EditText url, store, device, token, pos;
+    private CheckBox cameraCheckIn;
     private TextView status;
     private boolean storeQrSetupPending;
     private boolean confirmingStoreQr;
@@ -52,6 +54,8 @@ public class SettingsActivity extends Activity {
         token = findViewById(R.id.input_check_in_token);
         pos = findViewById(R.id.input_pos_url);
         pos.setText(getPosUrl(this));
+        cameraCheckIn = findViewById(R.id.enable_camera_check_in);
+        cameraCheckIn.setChecked(isCameraCheckInEnabled(this));
         status = findViewById(R.id.status_text);
         storeQrSetupPending = state != null && state.getBoolean(STATE_STORE_QR_SETUP_PENDING, false);
         confirmingStoreQr = state != null && state.getBoolean(STATE_CONFIRMING_STORE_QR, false);
@@ -247,6 +251,11 @@ public class SettingsActivity extends Activity {
         status.setVisibility(View.VISIBLE);
     }
 
+    static boolean isCameraCheckInEnabled(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("camera_check_in_enabled", false);
+    }
+
     private void saveDisplayAndLaunch() {
         try {
             String requestedPos = pos.getText().toString().trim();
@@ -254,7 +263,8 @@ public class SettingsActivity extends Activity {
             String validatedPos = PosUrlPolicy.forProfileSave(getBtcpayUrl(this), getStoreId(this), getPosUrl(this),
                 requestedOrigin, store.getText().toString().trim(), requestedPos);
             persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
-            if (!getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString("native_pos_url", validatedPos)
+            if (!getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putBoolean("camera_check_in_enabled", cameraCheckIn.isChecked()).putString("native_pos_url", validatedPos)
                 .putString("native_pos_origin", getBtcpayUrl(this)).putString("native_pos_store", getStoreId(this)).commit()) throw new IllegalStateException();
             OneTimeDisplayLoginHandoff.clear();
             startActivity(new Intent(this, MainActivity.class));

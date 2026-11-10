@@ -24,6 +24,8 @@ public class CallbackProbe extends ActivityBase {
  boolean inlineSubmissionInFlight,captureConfirmationVisible,loginExchange,pendingDisplayConfigurationCommit,blocked,collectionLaunching,collectionWaitingPage,checkInDisplayRefreshPending;
  String trustedDisplayUrl="display";
  static class PaymentOperationStore {PaymentOperationStore(Object c){}boolean exists(){return false;}}
+ // Camera policy is executed separately by test-kiosk-camera-mode.py; this probe models admission effects.
+ void refreshCameraCheckInMode(){}
  void openCollection(){}void setTutorialActive(boolean b){}void disableNfcReader(){}void pauseInlineRewardsScanner(){cameraRunning=false;}
  static class Hid {void reset(){}}Hid hidScanner=new Hid();
  class ParentActivity {protected void onResume(){}protected void onPause(){}}
