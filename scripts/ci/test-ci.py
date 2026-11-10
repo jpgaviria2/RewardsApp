@@ -15,6 +15,12 @@ def run(script, *args, cwd=None, env=None):
     return subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True)
 
 class Gates(unittest.TestCase):
+    def test_pr_ci_pins_and_retains_exact_head_identity(self):
+        text = (SCRIPTS.parent.parent / ".github/workflows/android-ci.yml").read_text()
+        self.assertEqual(text.count("ref: ${{ github.event.pull_request.head.sha || github.sha }}"), 2)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"', text)
+        self.assertIn("git rev-parse HEAD > ci-reports/tested-source.txt", text)
+        self.assertIn("            ci-reports/tested-source.txt", text)
     def test_android_setup_avoids_obsolete_tools_package(self):
         workflows = SCRIPTS.parent.parent / ".github/workflows"
         for name in ("android-ci.yml", "reviewed-release.yml"):

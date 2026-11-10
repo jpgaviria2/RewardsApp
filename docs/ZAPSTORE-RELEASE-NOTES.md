@@ -1,9 +1,17 @@
-# Rewards NFC Display 2.17.0
+# Rewards NFC Display 2.20.0 (version code 53)
 
-- Adds a separate staff Collect payment flow, without a PIN: enter the final CAD cents total already calculated by Square, confirm, and hand the tablet to the customer.
-- Customer payment screen presents an immutable Lightning invoice QR and accepts compatible Boltcard taps through the authenticated store collection API only. These sales do not earn rewards; the matching server plugin must enforce exclusion.
-- Persists only payment identity and dispatch guards before requests. Interrupted/ambiguous charges reconcile the same operation instead of creating or tapping again; pending and review block new charges.
-- Requires server-authoritative paid/expired/cancelled results and explicit staff finish before rewards check-in resumes. Cancellation is followed by status reconciliation.
-- Retains inline rewards camera, existing check-in, onboarding, settings and BTCPay login. Missing collection routes show upgrade/configuration guidance before amount entry.
+- **Bluetooth HID scanner support:** supported external keyboard-style scanner vendor/product `045E:0040` on Android API 29+ can supply Lightning addresses and standards-compliant LNURL-pay scans through the existing customer check-in flow. Other keyboards are not treated as supported scanners.
+- Scanning is admitted only on an eligible customer check-in screen. Disabled, blocked or interrupted scans are consumed/discarded rather than forwarding a partial wallet payload. On API 19–28 the supported scanner is guarded/consume-only; submission is not enabled and no unavailable external-device API is called.
+- This successor retains the approved offline debug-only HID harness in its separate `.hidtest` application ID. The prior physical offline HID diagnostic passed; that diagnostic is not the production app or proof of live customer check-in acceptance.
+- **Acceptance pending user testing:** production-signed upgrade and actual live Bluetooth check-in-screen tests, including eligible check-in, blocked-screen/lifecycle interruption and next-complete-scan recovery. Local replay/unit/lint evidence and the offline diagnostic do not replace these tests. No financial acceptance, payment, reward or fund-moving test is claimed.
+- Distribution intent is a stable GitHub release and Zapstore main channel. The configured canonical release-source URL is reserved metadata, not evidence that an APK has been signed, uploaded or published.
+- No server/plugin or app API contract changes are required by this HID successor.
 
-Release candidate metadata only: parent release workflow must review the exact commit and publish `rewards-nfc-display-2.17.0-production.apk` before the prospective Zapstore release source is live. Signing, publishing, physical NFC/camera and staged server payment acceptance are not part of the development build gate.
+## Retained 2.19.0 native POS behavior
+
+- **Take payment needs no POS URL typing.** The app uses your existing BTCPay login session to discover active apps belonging to the configured Store ID. One suitable Keypad Point of Sale opens automatically; multiple keypads show their names and app IDs for explicit selection. Other POS styles and unrelated apps are never picked as a substitute.
+- Discovery reads BTCPay's cookie-authenticated exact-store apps page, not the API-key-only Greenfield apps API. It makes one bounded HTTPS request to the configured origin, never follows redirects with cookies, and does not create an invoice, collect API keys, or enumerate other stores.
+- Discovery cancels on pause/destruction and rejects late results or selections after lifecycle/profile changes. A missing login, store permission rejection, missing route and unsupported markup receive separate guidance. The optional profile-bound manual POS setting remains an explicit fallback, not the normal workflow.
+- Retains Back to rewards, native BTCPay Login Code scanning, same-origin WebView/TLS restrictions, camera/NFC/HCE suspension in payment mode, and all existing custom-payment recovery/history and unresolved-operation locks. Back still does not cancel a BTCPay invoice.
+
+No server/plugin changes, invoice creation or fund-moving tests were performed. Physical signed upgrade, authenticated tablet discovery, checkout/return, login/session, lifecycle and NFC/camera acceptance remain device-only checks.

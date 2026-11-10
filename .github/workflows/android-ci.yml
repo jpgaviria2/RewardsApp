@@ -17,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Feature scope (temporary merchant-collection guard)
@@ -50,7 +51,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Record exact tested source
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          mkdir -p ci-reports
+          git rev-parse HEAD > ci-reports/tested-source.txt
       - name: Verify official Gradle wrapper before execution
         run: python3 scripts/ci/verify-gradle-wrapper.py
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
@@ -74,5 +83,6 @@ jobs:
             app/build/reports/
             app/build/test-results/
             app/build/outputs/apk/debug/*.apk
+            ci-reports/tested-source.txt
           if-no-files-found: error
           retention-days: 14

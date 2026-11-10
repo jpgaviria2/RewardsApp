@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.Manifest;
+import android.view.KeyEvent;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
@@ -55,6 +56,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
     private static final int CAMERA_PERMISSION_REQUEST = 5501;
     private static final long DUPLICATE_SCAN_WINDOW_MS = 15_000L;
     private static final String LEGACY_INLINE_DEVICE_ID = "rewards-nfc-display-inline";
@@ -77,7 +79,8 @@ public class MainActivity extends Activity {
         captureEpoch++;
         collectionLaunching = true;
         updateInlineScannerState();
-        startActivity(new Intent(this, PaymentActivity.class));
+        com.bitcoinrewards.nfcdisplay.ndef.NdefHostCardEmulationService.clearPayload();
+        startActivity(new Intent(this, new PaymentOperationStore(this).exists() ? PaymentActivity.class : NativePosActivity.class));
     }
 
     private WebView webView;
@@ -200,9 +203,14 @@ public class MainActivity extends Activity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
+        findViewById(R.id.btn_customer_rewards).setOnClickListener(v -> {
+            if (collectionBlocked()) { openCollection(); return; }
+            if (!loginExchange && !inlineSubmissionInFlight && !captureConfirmationVisible && webView != null)
+                webView.loadUrl(trustedDisplayUrl);
+        });
         collectPaymentButton = findViewById(R.id.btn_collect_payment);
         collectPaymentButton.setOnClickListener(v -> {
-            if (activityResumed && scannerPageEligible && checkInCapabilityVerified && collectionWaitingPage) openCollection();
+            if (activityResumed && !loginExchange && !pendingDisplayConfigurationCommit) openCollection();
         });
         webView = findViewById(R.id.webview);
         loadingText = findViewById(R.id.loading_text);
@@ -461,16 +469,16 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != CAMERA_PERMISSION_REQUEST) return;
-        if (!hasCameraPermission()) setRewardsScannerStatus("Camera permission is required for automatic rewards scanning.");
         updateInlineScannerState();
     }
 
     private void updateInlineScannerState() {
+        if (!canAcceptCustomerScan()) hidScanner.reset();
         updateNfcReaderState();
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
         if (collectPaymentButton != null) {
-            int visibility = !collectionBlocked() && activityResumed && scannerPageEligible && checkInCapabilityVerified
-                && collectionWaitingPage && !inlineSubmissionInFlight && !captureConfirmationVisible ? View.VISIBLE : View.GONE;
+            int visibility = activityResumed && !collectionLaunching && !loginExchange && !pendingDisplayConfigurationCommit
+                && !inlineSubmissionInFlight && !captureConfirmationVisible ? View.VISIBLE : View.GONE;
             if (collectPaymentButton.getVisibility() != visibility) {
                 collectPaymentButton.setVisibility(visibility);
                 View split = findViewById(R.id.main_split_layout);
@@ -489,14 +497,14 @@ public class MainActivity extends Activity {
             && inlineAuthenticationFailure == null
             && (trustedDisplayRecovery == null || !trustedDisplayRecovery.isRecovering());
         setTutorialActive(tutorialActive);
-        if (!hasCameraPermission()) {
-            pauseInlineRewardsScanner();
-            setRewardsScannerStatus("Camera permission is required for automatic rewards scanning.");
-            return;
-        }
         if (inlineAuthenticationFailure != null) {
             pauseInlineRewardsScanner();
             setRewardsScannerStatus(inlineAuthenticationFailure);
+            return;
+        }
+        if (!hasCameraPermission()) {
+            pauseInlineRewardsScanner();
+            setRewardsScannerStatus("Camera unavailable — use the connected HID scanner or tap a card.");
             return;
         }
         if (rewardsCameraSelection == null) selectRewardsCamera();
@@ -581,6 +589,7 @@ public class MainActivity extends Activity {
 
     private final BarcodeCallback inlineRewardsCallback = new BarcodeCallback() {
         @Override public void barcodeResult(BarcodeResult result) {
+            if (!canAcceptCustomerScan()) return;
             if (!activityResumed || collectionBlocked() || result == null || result.getText() == null || inlineSubmissionInFlight || !scannerPageEligible) return;
             WalletQrPayloadParser.ParsedPayload payload;
             try {
@@ -589,22 +598,50 @@ public class MainActivity extends Activity {
                 setRewardsScannerStatus(WalletQrPayloadParser.userFacingRejection(result.getText()));
                 return;
             }
-            long now = System.currentTimeMillis();
-            if (payload.value.equals(lastSubmittedValue) && now - lastSubmittedAtMs < DUPLICATE_SCAN_WINDOW_MS) return;
-            inlineSubmissionInFlight = true;
-            lastSubmittedValue = payload.value;
-            lastSubmittedAtMs = now;
-            setRewardsScannerStatus("Connecting " + payload.displayLabel() + "…");
-            showSubmissionOverlay("Connecting your wallet…");
-            vibrate(80);
-            pauseInlineRewardsScanner();
-            updateNfcReaderState();
-            submitTask = new SubmitInlineCheckInTask(payload);
-            submitTask.execute();
+            submitInlineWalletPayload(payload);
         }
     };
 
+    private boolean canAcceptCustomerScan() {
+        return activityResumed && scannerPageEligible && checkInCapabilityVerified
+            && !collectionBlocked() && !inlineSubmissionInFlight && !captureConfirmationVisible
+            && !loginExchange && !pendingDisplayConfigurationCommit && inlineAuthenticationFailure == null
+            && (trustedDisplayRecovery == null || !trustedDisplayRecovery.isRecovering());
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, canAcceptCustomerScan(), this::acceptHidWalletScan)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    private void acceptHidWalletScan(String raw) {
+        if (!canAcceptCustomerScan()) return;
+        try {
+            submitInlineWalletPayload(WalletQrPayloadParser.parse(raw));
+        } catch (IllegalArgumentException e) {
+            setRewardsScannerStatus(WalletQrPayloadParser.userFacingRejection(raw));
+        }
+    }
+
+    private void submitInlineWalletPayload(WalletQrPayloadParser.ParsedPayload payload) {
+        if (!canAcceptCustomerScan()) return;
+        long now = System.currentTimeMillis();
+        if (payload.value.equals(lastSubmittedValue) && now - lastSubmittedAtMs < DUPLICATE_SCAN_WINDOW_MS) return;
+        inlineSubmissionInFlight = true;
+        lastSubmittedValue = payload.value;
+        lastSubmittedAtMs = now;
+        setRewardsScannerStatus("Connecting " + payload.displayLabel() + "…");
+        showSubmissionOverlay("Connecting your wallet…");
+        vibrate(80);
+        pauseInlineRewardsScanner();
+        updateNfcReaderState();
+        submitTask = new SubmitInlineCheckInTask(payload);
+        submitTask.execute();
+        hidScanner.reset();
+    }
+
     private void updateNfcReaderState() {
+        if (!canAcceptCustomerScan()) hidScanner.reset();
         if (nfcAdapter == null) return;
         nfcReaderGate.update(
             activityResumed && !collectionBlocked(),
@@ -943,6 +980,7 @@ public class MainActivity extends Activity {
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
+        hidScanner.reset();
         disableNfcReader();
         pauseInlineRewardsScanner();
         super.onPause();
@@ -953,6 +991,7 @@ public class MainActivity extends Activity {
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
+        hidScanner.reset();
         disableNfcReader();
         if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();
         cancelCapabilityProbe();

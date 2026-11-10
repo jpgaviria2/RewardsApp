@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.view.KeyEvent;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,12 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 public class SettingsActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, false, raw -> { })) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private static final int STORE_QR_SCAN_REQUEST = 4400;
     private static final int LOGIN_CODE_SCAN_REQUEST = 4401;
     private static final String STATE_STORE_QR_SETUP_PENDING = "store_qr_setup_pending";
@@ -25,7 +32,7 @@ public class SettingsActivity extends Activity {
     static final String KEY_TOKEN_FINGERPRINT = "scanner_token_fingerprint", KEY_TOKEN_GENERATION = "scanner_token_generation", KEY_ONBOARDED = "onboarded";
     static final String KEY_CREDENTIAL_UPDATE_PENDING = "credential_update_pending";
 
-    private EditText url, store, device, token;
+    private EditText url, store, device, token, pos;
     private TextView status;
     private boolean storeQrSetupPending;
     private boolean confirmingStoreQr;
@@ -43,6 +50,8 @@ public class SettingsActivity extends Activity {
         store = findViewById(R.id.input_store_id);
         device = findViewById(R.id.input_check_in_device_id);
         token = findViewById(R.id.input_check_in_token);
+        pos = findViewById(R.id.input_pos_url);
+        pos.setText(getPosUrl(this));
         status = findViewById(R.id.status_text);
         storeQrSetupPending = state != null && state.getBoolean(STATE_STORE_QR_SETUP_PENDING, false);
         confirmingStoreQr = state != null && state.getBoolean(STATE_CONFIRMING_STORE_QR, false);
@@ -182,6 +191,7 @@ public class SettingsActivity extends Activity {
             ? "BTCPay server: " + parsed.origin + "\nStore ID: " + parsed.storeId
             : "Store ID: " + parsed.storeId + "\nThe BTCPay server will be read from the login QR.";
         new AlertDialog.Builder(this)
+            .setOnKeyListener((dialog, keyCode, event) -> hidScanner.handle(event, false, raw -> { }))
             .setTitle("Confirm Store QR")
             .setMessage(confirmation)
             .setPositiveButton("Scan login QR", (dialog, which) -> {
@@ -239,34 +249,45 @@ public class SettingsActivity extends Activity {
 
     private void saveDisplayAndLaunch() {
         try {
+            String requestedPos = pos.getText().toString().trim();
+            String requestedOrigin = ApiOrigin.requireConfigured(url.getText().toString().trim()).toString();
+            String validatedPos = PosUrlPolicy.forProfileSave(getBtcpayUrl(this), getStoreId(this), getPosUrl(this),
+                requestedOrigin, store.getText().toString().trim(), requestedPos);
             persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            if (!getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString("native_pos_url", validatedPos)
+                .putString("native_pos_origin", getBtcpayUrl(this)).putString("native_pos_store", getStoreId(this)).commit()) throw new IllegalStateException();
             OneTimeDisplayLoginHandoff.clear();
             startActivity(new Intent(this, MainActivity.class));
             finish();
         } catch (Exception e) {
-            status.setText("Enter a valid HTTPS BTCPay server URL and Store ID.");
+            status.setText("Enter a valid HTTPS server and Store ID. Optional POS URL must be on that server: /apps/APP_ID/pos.");
             status.setVisibility(View.VISIBLE);
         }
     }
 
     private void saveScannerProvisioning() {
         try {
-            String origin = persistDisplayConfiguration(url.getText().toString(), store.getText().toString());
+            String origin = ApiOrigin.requireConfigured(url.getText().toString().trim()).toString();
             String storeId = store.getText().toString().trim();
+            PendingOperation.validateText(storeId, 256);
+            if (storeId.isEmpty()) throw new IllegalArgumentException();
             String deviceId = device.getText().toString().trim();
             String value = token.getText().toString();
             PendingOperation.validateText(deviceId, 256);
             if (deviceId.isEmpty()) throw new IllegalArgumentException();
-            if (value.isEmpty() && !scannerConfigurationUsable(this)) throw new IllegalArgumentException();
+            boolean sameProfile = origin.equals(getBtcpayUrl(this)) && storeId.equals(getStoreId(this));
+            if (value.isEmpty() && (!sameProfile || !scannerConfigurationUsable(this))) throw new IllegalArgumentException();
             SecureTokenStore secure = new SecureTokenStore(this);
+            // OS support preflight only; actual keystore writes can still fail closed below.
             if (!secure.available()) throw new IllegalStateException();
+            persistDisplayConfiguration(origin, storeId);
             CredentialUpdateState update = new CredentialUpdateState(new PreferenceMetadata(this), new SecureStorage(secure));
             if (!update.update(origin, storeId, deviceId, value)) throw new IllegalStateException();
             token.setText("");
             status.setText("Scoped rewards scanner provisioning saved. The display login session remains in WebView cookies.");
             status.setVisibility(View.VISIBLE);
         } catch (Exception e) {
-            status.setText("Scanner provisioning requires the current display server/store, a device ID, and a scoped token.");
+            status.setText("Scanner provisioning failed. Check server/store, device ID, scoped token and device keystore. Display settings may already be saved; scanner remains disabled if secure storage failed.");
             status.setVisibility(View.VISIBLE);
         }
     }
@@ -278,6 +299,7 @@ public class SettingsActivity extends Activity {
         String origin = commitDisplayConfiguration(this, requestedOrigin, requestedStore);
         String storeId = requestedStore == null ? "" : requestedStore.trim();
         if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
+            pos.setText("");
             device.setText("");
             token.setText("");
         }
@@ -294,7 +316,8 @@ public class SettingsActivity extends Activity {
         String oldStore = p.getString(KEY_STORE_ID, "");
         SharedPreferences.Editor editor = p.edit().putString(KEY_BTCPAY_URL, origin).putString(KEY_STORE_ID, storeId);
         if (!origin.equals(oldOrigin) || !storeId.equals(oldStore)) {
-            editor.remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
+            editor.remove("native_pos_url").remove("native_pos_origin").remove("native_pos_store")
+                .remove(KEY_CHECK_IN_DEVICE_ID).remove(KEY_TOKEN_FINGERPRINT).remove(KEY_TOKEN_GENERATION)
                 .putBoolean(KEY_ONBOARDED, false).putBoolean(KEY_CREDENTIAL_UPDATE_PENDING, false);
         }
         if (!editor.commit()) throw new IllegalStateException();
@@ -315,6 +338,14 @@ public class SettingsActivity extends Activity {
 
     static String getStoreId(Context c) {
         return c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_STORE_ID, "");
+    }
+
+    static String getPosUrl(Context c) {
+        SharedPreferences p = c.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (!getBtcpayUrl(c).equals(p.getString("native_pos_origin", ""))
+            || !getStoreId(c).equals(p.getString("native_pos_store", ""))) return "";
+        try { return PosUrlPolicy.require(getBtcpayUrl(c), p.getString("native_pos_url", "")); }
+        catch (Exception e) { return ""; }
     }
 
     static String getCheckInDeviceId(Context c) {
