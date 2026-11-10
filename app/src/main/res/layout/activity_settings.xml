@@ -86,6 +86,19 @@
             android:text="Save &amp; launch display"
             android:textAllCaps="false" />
 
+        <CheckBox
+            android:id="@+id/enable_camera_check_in"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="Enable built-in camera QR scanning (optional)"
+            android:textColor="#ffffff" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Off by default: use the connected scanner above the display or NFC. Camera scanning starts only after enabling this option and choosing Save &amp; launch display."
+            android:textColor="#aaaacc" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
