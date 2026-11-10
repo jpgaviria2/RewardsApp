@@ -70,19 +70,20 @@
                     android:layout_height="match_parent" />
 
                 <TextView
+                    android:id="@+id/scan_here_prompt"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom"
-                    android:padding="8dp"
+                    android:layout_height="match_parent"
                     android:gravity="center"
-                    android:background="#D9101820"
-                    android:text="@string/camera_guide"
-                    android:textColor="@color/rewards_cream"
+                    android:padding="12dp"
+                    android:background="@color/rewards_cream"
+                    android:text="@string/scan_here"
+                    android:textColor="@color/rewards_green"
                     android:textStyle="bold"
-                    android:textSize="14sp" />
+                    android:textSize="48sp" />
 
                 <Button
                     android:id="@+id/btn_flip_inline_camera"
+                    android:visibility="gone"
                     android:layout_width="48dp"
                     android:layout_height="42dp"
                     android:layout_gravity="top|end"
@@ -288,5 +289,14 @@
         android:text="Wallet connected\nYou’re ready to earn sats"
         android:clickable="true"
         android:focusable="true"
+        android:visibility="gone" />
+
+    <com.bitcoinrewards.nfcdisplay.CheckInConfettiView
+        android:id="@+id/check_in_confetti"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no"
         android:visibility="gone" />
 </FrameLayout>

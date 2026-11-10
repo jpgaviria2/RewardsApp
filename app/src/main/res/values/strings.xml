@@ -3,14 +3,14 @@
     <string name="app_name">Rewards NFC Display</string>
     <string name="hce_service_description">NFC tag emulation for sats rewards</string>
     <string name="ndef_aid_description">NDEF Tag Application</string>
+    <string name="scan_here">Scan here</string>
     <string name="rewards_headline">Get rewarded in sats</string>
     <string name="rewards_subtitle">Tap your rewards card or show your sats wallet QR</string>
     <string name="example_wallet">EXAMPLE WALLET</string>
-    <string name="camera_guide">Hold your sats wallet QR inside the frame</string>
     <string name="tap_title">TAP CARD</string>
     <string name="tap_instruction">Hold near the kiosk</string>
     <string name="qr_title">SHOW QR</string>
-    <string name="qr_instruction">Face it toward the camera</string>
+    <string name="qr_instruction">Hold QR toward the scanner</string>
     <string name="scanner_ready">Ready — tap a card or show your sats wallet QR</string>
     <string name="flip_camera">Flip camera</string>
     <string name="settings">Settings</string>

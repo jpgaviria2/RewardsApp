@@ -18,7 +18,14 @@ final class CollectionCheckInStore {
             && !UUID.fromString(id).equals(new UUID(0, 0)); } catch (Exception e) { return false; }
     }
     static String successId(InputStream input) throws Exception {
-        if (input == null) return null;
+        byte[] body = readBody(input);
+        if (body.length == 0) return null; // Old plugin: no transfer support.
+        JSONObject json = PaymentContract.response(new String(body, StandardCharsets.UTF_8));
+        Object id = json.opt("checkInId");
+        return id instanceof String && valid((String) id) ? (String) id : null;
+    }
+    static byte[] readBody(InputStream input) throws Exception {
+        if (input == null) return new byte[0];
         try (InputStream in = input; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[2048]; int n;
             long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
@@ -26,11 +33,7 @@ final class CollectionCheckInStore {
                 if (out.size() + n > 32768 || System.nanoTime() > deadline) throw new IllegalArgumentException();
                 out.write(buffer, 0, n);
             }
-            if (out.size() == 0) return null; // Old plugin: check-in remains successful without transfer support.
-            // Check-in success is flat; reject recursion before ExactJson can recurse.
-            JSONObject json = PaymentContract.response(new String(out.toByteArray(), StandardCharsets.UTF_8));
-            Object id = json.opt("checkInId");
-            return id instanceof String && valid((String) id) ? (String) id : null;
+            return out.toByteArray();
         }
     }
     boolean capture(String origin, String store, String id) {
