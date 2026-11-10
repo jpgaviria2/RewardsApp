@@ -103,6 +103,11 @@ public class MainActivity extends Activity {
     private TextView rewardsScannerStatus;
     private TextView submissionOverlay;
     private TextView successOverlay;
+    private CheckInConfettiView confettiView;
+    private final CheckInCelebration celebration = new CheckInCelebration();
+    private Runnable finishCelebration;
+    // Survives overlay/timer cancellation, but contains no personal presentation data.
+    private boolean checkInDisplayRefreshPending;
     private View tapActionCard;
     private View idleTutorialPanel;
     private View tutorialFrame;
@@ -219,6 +224,7 @@ public class MainActivity extends Activity {
         rewardsScannerStatus = findViewById(R.id.rewards_scanner_status);
         submissionOverlay = findViewById(R.id.nfc_tap_overlay);
         successOverlay = findViewById(R.id.nfc_reader_overlay);
+        confettiView = findViewById(R.id.check_in_confetti);
         tapActionCard = findViewById(R.id.tap_action_card);
         idleTutorialPanel = findViewById(R.id.idle_tutorial_panel);
         tutorialFrame = findViewById(R.id.wallet_tutorial_frame);
@@ -472,7 +478,14 @@ public class MainActivity extends Activity {
         updateInlineScannerState();
     }
 
+    private void reconcileCompletedCheckIn() {
+        if (!checkInDisplayRefreshPending || !canAcceptCustomerScan() || isFinishing() || webView == null) return;
+        checkInDisplayRefreshPending = false;
+        webView.reload();
+    }
+
     private void updateInlineScannerState() {
+        reconcileCompletedCheckIn();
         if (!canAcceptCustomerScan()) hidScanner.reset();
         updateNfcReaderState();
         if (rewardsScannerPanel == null || inlineRewardsScanner == null) return;
@@ -749,6 +762,8 @@ public class MainActivity extends Activity {
     }
 
     private void showSubmissionOverlay(String message) {
+        hideCaptureOverlays();
+        celebration.begin(captureEpoch);
         setTutorialActive(false);
         if (successOverlay != null) successOverlay.setVisibility(View.GONE);
         if (submissionOverlay != null) {
@@ -764,19 +779,34 @@ public class MainActivity extends Activity {
         updateNfcReaderState();
         if (submissionOverlay != null) submissionOverlay.setVisibility(View.GONE);
         if (successOverlay == null) return;
-        String customer = label == null || label.isEmpty() ? "Wallet" : label;
-        successOverlay.setText("Wallet connected\n" + customer + "\nYou’re ready to earn sats");
+        String customer = label;
+        successOverlay.setText(customer.isEmpty() ? "Checked in\nYou’re ready to earn sats"
+            : "Checked in\n" + customer + "\nYou’re ready to earn sats");
         successOverlay.setScaleX(0.88f);
         successOverlay.setScaleY(0.88f);
         successOverlay.setAlpha(0f);
         successOverlay.setVisibility(View.VISIBLE);
         successOverlay.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200L).start();
+        if (confettiView != null) confettiView.start();
     }
 
     private void hideCaptureOverlays() {
+        if (recoveryHandler != null && finishCelebration != null) recoveryHandler.removeCallbacks(finishCelebration);
+        finishCelebration = null;
+        celebration.clear();
+        if (confettiView != null) confettiView.stop();
+        if (rewardsScannerStatus != null) rewardsScannerStatus.setText(R.string.scanner_ready);
         captureConfirmationVisible = false;
-        if (submissionOverlay != null) submissionOverlay.setVisibility(View.GONE);
-        if (successOverlay != null) successOverlay.setVisibility(View.GONE);
+        if (submissionOverlay != null) {
+            submissionOverlay.animate().cancel();
+            submissionOverlay.setText("");
+            submissionOverlay.setVisibility(View.GONE);
+        }
+        if (successOverlay != null) {
+            successOverlay.animate().cancel();
+            successOverlay.setText("");
+            successOverlay.setVisibility(View.GONE);
+        }
     }
 
     private void pulseTapCard() {
@@ -855,6 +885,9 @@ public class MainActivity extends Activity {
     private final class SubmitInlineCheckInTask extends AsyncTask<Void, Void, Boolean> {
         private final WalletQrPayloadParser.ParsedPayload payload;
         private final String boltcardUrl;
+        private final long requestEpoch = captureEpoch;
+        private String confirmedCheckInId;
+        private String confirmedCustomerHandle = "";
         private int responseCode;
         private boolean loginExpired;
 
@@ -907,10 +940,20 @@ public class MainActivity extends Activity {
                 loginExpired = InlineCheckInAuthentication.isLoginExpired(responseCode);
                 if (responseCode < 200 || responseCode >= 300) return false;
                 String checkInId = null;
+                String confirmationId = null;
                 try {
-                    if (connection.getContentLength() <= 32768) checkInId = CollectionCheckInStore.successId(connection.getInputStream());
+                    // Legacy empty bodies still clear any prior customer's capture.
+                    if (connection.getContentLength() == 0) checkInId = CollectionCheckInStore.successId(connection.getInputStream());
+                    else if (connection.getContentLength() <= 32768) {
+                        byte[] responseBytes = CollectionCheckInStore.readBody(connection.getInputStream());
+                        checkInId = CollectionCheckInStore.successId(new java.io.ByteArrayInputStream(responseBytes));
+                        confirmationId = ConfirmedCheckInResponse.confirmedId(responseBytes);
+                        confirmedCustomerHandle = ConfirmedCheckInResponse.confirmedHandle(responseBytes);
+                    }
                 } catch (Exception ignoredBody) { /* Legacy success stays compatible; never reuse a previous customer. */ }
-                return new CollectionCheckInStore(MainActivity.this).capture(requestOrigin, requestStore, checkInId);
+                boolean captured = new CollectionCheckInStore(MainActivity.this).capture(requestOrigin, requestStore, checkInId);
+                if (captured && CheckInCelebration.isConfirmedHttpStatus(responseCode)) confirmedCheckInId = confirmationId;
+                return captured;
             } catch (Exception e) {
                 return false;
             } finally {
@@ -922,21 +965,35 @@ public class MainActivity extends Activity {
             if (submitTask != this) return;
             submitTask = null;
             inlineSubmissionInFlight = false;
+            if (ok) checkInDisplayRefreshPending = true;
             if (loginExpired) {
                 inlineAuthenticationFailure = InlineCheckInAuthentication.failureMessage(responseCode);
                 hideCaptureOverlays();
                 updateInlineScannerState();
                 return;
             }
+            if (!canAcceptCustomerScan() || requestEpoch != captureEpoch) {
+                hideCaptureOverlays();
+                updateInlineScannerState();
+                return;
+            }
             if (ok) {
-                String label = boltcardUrl == null ? payload.displayLabel() : "Rewards card";
-                setRewardsScannerStatus("Wallet connected — " + label);
-                showSuccessOverlay(label);
-                Toast.makeText(MainActivity.this, "Wallet connected: " + label, Toast.LENGTH_LONG).show();
-                vibrate(180);
-                recoveryHandler.postDelayed(() -> {
-                    if (!isFinishing() && webView != null) webView.reload();
-                }, 1_600L);
+                // Only the confirmed response may supply the user-selected Trails handle.
+                // Never substitute payload.displayLabel() or raw QR/card content.
+                if (celebration.confirm(confirmedCheckInId, confirmedCustomerHandle, requestEpoch)) {
+                    String label = celebration.name();
+                    setRewardsScannerStatus("Wallet connected — " + label);
+                    showSuccessOverlay(label);
+                    vibrate(180);
+                } else {
+                    hideCaptureOverlays();
+                    setRewardsScannerStatus("Response received — check-in not confirmed.");
+                }
+                finishCelebration = () -> {
+                    hideCaptureOverlays();
+                    updateInlineScannerState();
+                };
+                recoveryHandler.postDelayed(finishCelebration, 1_600L);
             } else if (payload != null && payload.kind == WalletQrPayloadParser.Kind.LNURL_PAY && responseCode >= 400) {
                 hideCaptureOverlays();
                 updateInlineScannerState();
@@ -976,6 +1033,7 @@ public class MainActivity extends Activity {
     @Override protected void onPause() {
         captureEpoch++;
         activityResumed = false;
+        hideCaptureOverlays();
         setTutorialActive(false);
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
@@ -991,6 +1049,7 @@ public class MainActivity extends Activity {
         nfcReaderGate.update(false, scannerPageEligible,
             trustedDisplayRecovery != null && trustedDisplayRecovery.isRecovering(),
             inlineAuthenticationFailure != null, inlineSubmissionInFlight || captureConfirmationVisible);
+        hideCaptureOverlays();
         hidScanner.reset();
         disableNfcReader();
         if (trustedDisplayRecovery != null) trustedDisplayRecovery.destroy();

@@ -1,11 +1,17 @@
-# Rewards NFC Display 2.20.0 (version code 53)
+# Rewards NFC Display 2.21.0 (version code 54)
 
-- **Bluetooth HID scanner support:** supported external keyboard-style scanner vendor/product `045E:0040` on Android API 29+ can supply Lightning addresses and standards-compliant LNURL-pay scans through the existing customer check-in flow. Other keyboards are not treated as supported scanners.
-- Scanning is admitted only on an eligible customer check-in screen. Disabled, blocked or interrupted scans are consumed/discarded rather than forwarding a partial wallet payload. On API 19–28 the supported scanner is guarded/consume-only; submission is not enabled and no unavailable external-device API is called.
-- This successor retains the approved offline debug-only HID harness in its separate `.hidtest` application ID. The prior physical offline HID diagnostic passed; that diagnostic is not the production app or proof of live customer check-in acceptance.
-- **Acceptance pending user testing:** production-signed upgrade and actual live Bluetooth check-in-screen tests, including eligible check-in, blocked-screen/lifecycle interruption and next-complete-scan recovery. Local replay/unit/lint evidence and the offline diagnostic do not replace these tests. No financial acceptance, payment, reward or fund-moving test is claimed.
-- Distribution intent is a stable GitHub release and Zapstore main channel. The configured canonical release-source URL is reserved metadata, not evidence that an APK has been signed, uploaded or published.
-- No server/plugin or app API contract changes are required by this HID successor.
+- **Scan here:** a prominent scanner prompt replaces the idle scan animation while preserving the customer tutorial and existing NFC, camera, and Bluetooth HID entry points.
+- **Confirmed check-in feedback:** a finite confetti effect and confirmation appear only after a validated successful check-in and local capture. A bounded generated or custom handle from the confirmed `@trailscoffee.com` response is shown; other destinations receive generic confirmation. Raw scan content is not used as the confirmed greeting.
+- Personal confirmation clears on idle, interruption, pause, and destruction. Late or retired callbacks cannot replace the current customer's presentation; pending nonpersonal display reconciliation resumes only when scanning is eligible. Duplicate confirmation is guarded without a lifetime kiosk capacity limit.
+- Existing financial-operation locks, payment/recovery behavior, process-owned HID framing, and authentication gates remain unchanged. No server/plugin API change is required.
+- Stable GitHub distribution and Zapstore main-channel metadata are intended; a source URL alone does not establish signing, publication, or catalog availability. These are independently verified release stages.
+- **User acceptance remains separate:** native Android layout/accessibility/lifecycle, physical scanner/NFC/camera behavior, production installation, and live check-in confirmation are not established by offline tests or model review. No automated production check-in, payment, reward, or fund-moving test is performed.
+
+## Retained 2.20.0 Bluetooth HID behavior
+
+- Supported external keyboard-style scanner vendor/product `045E:0040` on Android API 29+ supplies Lightning addresses and standards-compliant LNURL-pay scans through the existing customer check-in flow. Other keyboards are not treated as supported scanners.
+- Disabled, blocked, or interrupted scans are consumed/discarded rather than forwarding partial payloads. On API 19–28 the supported scanner is guarded/consume-only; unavailable external-device APIs are not called.
+- The debug-only offline HID harness remains in its separate `.hidtest` application ID. An offline diagnostic is not a production artifact or live check-in acceptance.
 
 ## Retained 2.19.0 native POS behavior
 
