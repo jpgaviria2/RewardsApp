@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.view.KeyEvent;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
@@ -23,6 +24,12 @@ import java.util.concurrent.Executors;
 
 /** Separate foreground collection mode: never calls a rewards endpoint or a card issuer. */
 public final class PaymentActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, false, raw -> { })) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private static final ExecutorService NETWORK = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private PaymentOperationStore operations;
@@ -186,7 +193,7 @@ public final class PaymentActivity extends Activity {
                 String text = reason.getText().toString().trim();
                 if (text.isEmpty()) { Toast.makeText(this, "A reconciliation reason is required.", Toast.LENGTH_LONG).show(); return; }
                 request(() -> api.reconcileAndRead(operations, text), true, null);
-            }).show();
+            }).setOnKeyListener((dialog, keyCode, event) -> hidScanner.handle(event, false, raw -> { })).show();
     }
     private void schedulePoll() {
         handler.removeCallbacks(poll);

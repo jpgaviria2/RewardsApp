@@ -2,6 +2,7 @@ package com.bitcoinrewards.nfcdisplay;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.view.KeyEvent;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.http.SslError;
@@ -12,6 +13,12 @@ import android.widget.*;
 
 /** Native merchant POS only. No Android reward capture, invoice creation API, or NFC adapter. */
 public final class NativePosActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, false, raw -> { })) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private WebView web;
     private WebOriginPolicy policy;
     private String entry;

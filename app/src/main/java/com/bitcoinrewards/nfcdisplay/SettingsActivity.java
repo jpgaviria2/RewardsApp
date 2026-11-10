@@ -1,6 +1,7 @@
 package com.bitcoinrewards.nfcdisplay;
 
 import android.app.Activity;
+import android.view.KeyEvent;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,12 @@ import android.widget.EditText;
 import android.widget.TextView;
 
 public class SettingsActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, false, raw -> { })) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private static final int STORE_QR_SCAN_REQUEST = 4400;
     private static final int LOGIN_CODE_SCAN_REQUEST = 4401;
     private static final String STATE_STORE_QR_SETUP_PENDING = "store_qr_setup_pending";
@@ -184,6 +191,7 @@ public class SettingsActivity extends Activity {
             ? "BTCPay server: " + parsed.origin + "\nStore ID: " + parsed.storeId
             : "Store ID: " + parsed.storeId + "\nThe BTCPay server will be read from the login QR.";
         new AlertDialog.Builder(this)
+            .setOnKeyListener((dialog, keyCode, event) -> hidScanner.handle(event, false, raw -> { }))
             .setTitle("Confirm Store QR")
             .setMessage(confirmation)
             .setPositiveButton("Scan login QR", (dialog, which) -> {

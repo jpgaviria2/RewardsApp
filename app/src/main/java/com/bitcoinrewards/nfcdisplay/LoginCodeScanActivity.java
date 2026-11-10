@@ -2,6 +2,7 @@ package com.bitcoinrewards.nfcdisplay;
 
 import android.Manifest;
 import android.app.Activity;
+import android.view.KeyEvent;
 
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -22,6 +23,12 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView;
  * "code;baseUrl;email". SettingsActivity normalizes the payload.
  */
 public class LoginCodeScanActivity extends Activity {
+    private final HidScannerInput hidScanner = HidScannerInput.processInput();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (hidScanner.handle(event, false, raw -> { })) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
     private static final int CAMERA_PERMISSION_REQUEST = 4301;
     static final String EXTRA_STORE_QR_MODE = "store_qr_mode";
 
