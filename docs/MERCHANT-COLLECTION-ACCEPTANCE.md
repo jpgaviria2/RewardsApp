@@ -41,6 +41,6 @@ No fund-moving tests are authorized. Even an unfunded invoice is a server-side w
 
 ## Distribution and repair
 
-Version 2.19.0 (52), asset `rewards-nfc-display-2.19.0-production.apk`, feature-branch/tag public distribution for user testing. Main merge is not authorized. Existing main-only trusted release automation remains unchanged; local production signing requires exact-head CI and independent review evidence. Retain release checksum, certificate, source and relay/CDN receipts in the durable worklog.
+Historical 2.19.0 (52) distribution used asset `rewards-nfc-display-2.19.0-production.apk` from the reviewed feature lineage. That lineage was subsequently included in PR #14 and integrated into main with 2.20.0; main now contains 2.22.0 (55). The earlier feature-only merge restriction is historical, not a current instruction. Existing main-only trusted release automation remains unchanged; signing and publication still require their own exact-source authorization and evidence. Retain release checksum, certificate, source and relay/CDN receipts in the durable worklog. See `ROADMAP.md` for the current implementation and acceptance backlog.
 
 If a published test build is faulty, mark the GitHub release with an install warning and communicate the affected version. Preserve immutable tags/artifacts and old payment state. Correct through a reviewed higher-versionCode, same-certificate forward release; do not force-replace public bytes, wipe identities or promise an ordinary in-place downgrade.
