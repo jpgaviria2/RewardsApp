@@ -1,4 +1,6 @@
-# Process-owned HID frame authority (2.20.0 / reserved code 53 successor)
+# Process-owned HID frame authority (introduced in 2.20.0 / code 53)
+
+Integration status: the accepted successor was merged through PR #14 into main and released as 2.20.0. Main now contains 2.22.0 (55). The rejected tree below remains rejected; historical unsigned-candidate evidence is not physical production acceptance. See `ROADMAP.md` for outstanding work.
 
 The rejected tree `42d45ca4119034ee5213a21787962b4558d24c90` allocated an independent `HidScannerInput` (and framer) in each Activity. Offline reproduction using its real field initializers and dispatch bodies showed Settings consuming `alice.` while disabled, followed by enabled Main accepting `bob@example.com` plus Enter as a different valid destination.
 
@@ -18,4 +20,4 @@ The diagnostic isolation test now requires the shared getter instead of a privat
 
 This owner is process-local, not durable. Process death loses framing state. Cold initialization cannot know a prefix emitted before the app observed any scanner event, and no background capture is introduced to learn it. The first foreground frame after such an unobserved interval cannot be attested as whole by this design; use an observed delimiter and a fresh complete scan. This repair claims cross-Activity safety for observed input within a live process, not hardware restart/protocol authentication. Separate app processes (including the diagnostic application ID) do not share memory.
 
-No physical scanner, signed upgrade, live check-in, financial callback, install or publication is validated by offline replay. The new unsigned diagnostic APK, if built, is a new artifact and must not replace provenance for a previously installed diagnostic. Version 2.20.0/code53 remains reserved for an unpublished unsigned successor; the old rejected tree is not promoted. A fresh actual external review of the new tree is still required before signing/publication.
+No physical scanner, signed upgrade, live check-in, financial callback, install or publication is validated by offline replay. The unsigned diagnostic APK is a separate artifact and must not replace provenance for a previously installed diagnostic. The accepted successor subsequently passed the release process and was merged/published as 2.20.0; that does not promote the old rejected tree or establish the device-only acceptance listed in `ROADMAP.md`. New source changes still require fresh exact-source review before signing/publication.
